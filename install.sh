@@ -1,76 +1,91 @@
-#!/bin/bash set -euo pipefail
+#!/bin/bash 
+set -euo pipefail
 
-=== Prompt user for disk and basic config ===
+=========================
 
-echo "Available disks:" lsblk -d -o NAME,SIZE,MODEL
+USER CONFIGURATION
 
-read -rp "Enter the target DISK (e.g., /dev/nvme0n1): " DISK read -rp "Enter the hostname: " HOSTNAME read -rp "Enter your username: " USERNAME read -rp "Enter a name for the LUKS container (e.g., cryptroot): " LUKS_NAME
+=========================
 
-echo "WARNING: This will erase all data on ${DISK}. Press Enter to continue or Ctrl+C to abort." read
+read -p "Enter hostname: " HOSTNAME read -p "Enter username: " USERNAME
 
-=== Partition Disk ===
+read -s -p "Enter password for root: " ROOT_PASSWORD; echo read -s -p "Enter password for $USERNAME: " USER_PASSWORD; echo read -s -p "Enter LUKS disk encryption password: " LUKS_PASSWORD; echo
 
-sgdisk -Z "$DISK" sgdisk -n 1:0:+1G -t 1:ef00 "$DISK"    # EFI sgdisk -n 2:0:0 -t 2:8300 "$DISK"     # Root
+=========================
 
-=== Wipe any existing filesystem and crypto signature ===
+STATIC CONFIG
 
-wipefs -a "${DISK}p2"
+=========================
 
-=== Setup LUKS Encryption ===
+DISK="/dev/nvme0n1" EFI_PART="${DISK}p1" ROOT_PART="${DISK}p2" LUKS_NAME="main" LOCALE="en_PH.UTF-8" TIMEZONE="Asia/Manila" SUBVOL_ROOT="@" SUBVOL_HOME="@home"
 
-echo "Setting up encryption for ${DISK}p2" cryptsetup luksFormat "${DISK}p2" cryptsetup open "${DISK}p2" "$LUKS_NAME"
+=========================
 
-=== Format and Mount Btrfs ===
+PARTITION DISK
 
-mkfs.btrfs "/dev/mapper/${LUKS_NAME}" mount "/dev/mapper/${LUKS_NAME}" /mnt
+=========================
 
-btrfs subvolume create /mnt/@ btrfs subvolume create /mnt/@home umount /mnt
+echo "==> Partitioning disk..." sgdisk -Z "$DISK" sgdisk -n 1:0:+1G -t 1:ef00 "$DISK"     # EFI sgdisk -n 2:0:0 -t 2:8300 "$DISK"       # Root
 
-mount -o noatime,ssd,compress=zstd,space_cache=v2,discard=async,subvol=@ "/dev/mapper/${LUKS_NAME}" /mnt mkdir /mnt/home mount -o noatime,ssd,compress=zstd,space_cache=v2,discard=async,subvol=@home "/dev/mapper/${LUKS_NAME}" /mnt/home
+=========================
 
-=== EFI Partition ===
+ENCRYPT ROOT
 
-mkfs.fat -F32 "${DISK}p1" mkdir -p /mnt/boot mount "${DISK}p1" /mnt/boot
+=========================
 
-=== Mirrorlist and Base Install ===
+echo "==> Setting up LUKS on $ROOT_PART" echo "$LUKS_PASSWORD" | cryptsetup luksFormat "$ROOT_PART" - echo "$LUKS_PASSWORD" | cryptsetup open "$ROOT_PART" "$LUKS_NAME" -
 
-pacman -Sy reflector --noconfirm reflector -c Singapore -a 12 --sort rate --save /etc/pacman.d/mirrorlist
+mkfs.btrfs /dev/mapper/$LUKS_NAME mount /dev/mapper/$LUKS_NAME /mnt btrfs subvolume create /mnt/$SUBVOL_ROOT btrfs subvolume create /mnt/$SUBVOL_HOME umount /mnt
 
-pacstrap /mnt base linux linux-headers linux-firmware btrfs-progs sudo neovim networkmanager 
-base-devel pipewire wireplumber acpid bluez bluez-utils ufw sddm alacritty ttf-jetbrains-mono-nerd 
-hyprland xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
+mount -o noatime,compress=zstd,space_cache=v2,discard=async,subvol=$SUBVOL_ROOT /dev/mapper/$LUKS_NAME /mnt mkdir /mnt/home mount -o noatime,compress=zstd,space_cache=v2,discard=async,subvol=$SUBVOL_HOME /dev/mapper/$LUKS_NAME /mnt/home
+
+=========================
+
+FORMAT & MOUNT EFI
+
+=========================
+
+mkfs.fat -F32 "$EFI_PART" mkdir /mnt/boot mount "$EFI_PART" /mnt/boot
+
+=========================
+
+INSTALL BASE SYSTEM
+
+=========================
+
+pacstrap /mnt base linux linux-firmware linux-headers 
+networkmanager sudo neovim man-db man-pages 
+hyprland xdg-desktop-portal-hyprland 
+bluez bluez-utils firewalld acpid pipewire wireplumber base-devel 
+sddm alacritty ttf-jetbrains-mono-nerd
 
 genfstab -U /mnt >> /mnt/etc/fstab
 
-=== Chroot Configuration ===
+=========================
 
-arch-chroot /mnt /bin/bash <<EOF
+CHROOT CONFIG
 
-ln -sf /usr/share/zoneinfo/Asia/Manila /etc/localtime hwclock --systohc
+=========================
 
-sed -i 's/^#en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen sed -i 's/^#en_PH.UTF-8/en_PH.UTF-8/' /etc/locale.gen locale-gen echo "LANG=en_PH.UTF-8" > /etc/locale.conf
+arch-chroot /mnt /bin/bash <<EOF ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime hwclock --systohc
 
-echo "$HOSTNAME" > /etc/hostname
+echo "$LOCALE UTF-8" >> /etc/locale.gen locale-gen echo "LANG=$LOCALE" > /etc/locale.conf echo "$HOSTNAME" > /etc/hostname
 
-Set root password
+Setup users
 
-echo "Set root password" passwd
+echo "root:$ROOT_PASSWORD" | chpasswd useradd -m -G wheel -s /bin/bash "$USERNAME" echo "$USERNAME:$USER_PASSWORD" | chpasswd echo "$USERNAME ALL=(ALL) ALL" > /etc/sudoers.d/$USERNAME chmod 0440 /etc/sudoers.d/$USERNAME
 
-Create user
+mkinitcpio setup
 
-useradd -m -g users -G wheel "$USERNAME" echo "Set password for $USERNAME" passwd "$USERNAME" echo "$USERNAME ALL=(ALL) ALL" > /etc/sudoers.d/$USERNAME chmod 0440 /etc/sudoers.d/$USERNAME
+sed -i 's/^MODULES=()/MODULES=(btrfs)/' /etc/mkinitcpio.conf sed -i 's/^HOOKS=(.*)/HOOKS=(base udev autodetect keyboard keymap modconf block encrypt filesystems fsck)/' /etc/mkinitcpio.conf mkinitcpio -P
 
-Initramfs Config
+GRUB install
 
-sed -i 's/^MODULES=()/MODULES=(btrfs)/' /etc/mkinitcpio.conf sed -i 's/^HOOKS=(base udev autodetect modconf block filesystems keyboard fsck)/HOOKS=(base udev autodetect modconf block encrypt filesystems keyboard fsck)/' /etc/mkinitcpio.conf mkinitcpio -P
-
-GRUB Install
-
-grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB disk_uuid=$(blkid -s UUID -o value ${DISK}p2) sed -i "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX="cryptdevice=UUID=$disk_uuid:$LUKS_NAME root=/dev/mapper/$LUKS_NAME"|" /etc/default/grub grub-mkconfig -o /boot/grub/grub.cfg
+pacman -S grub efibootmgr intel-ucode --noconfirm grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB UUID=$(blkid -s UUID -o value $ROOT_PART) sed -i "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX="cryptdevice=UUID=$UUID:$LUKS_NAME root=/dev/mapper/$LUKS_NAME quiet splash loglevel=3"|" /etc/default/grub grub-mkconfig -o /boot/grub/grub.cfg
 
 Enable services
 
-systemctl enable NetworkManager sddm bluetooth acpid ufw EOF
+systemctl enable NetworkManager systemctl enable firewalld systemctl enable bluetooth systemctl enable acpid systemctl enable sddm EOF
 
-umount -R /mnt echo "\n✅ Done! You can reboot now."
+echo "✅ Installation complete. You may now reboot."
 
