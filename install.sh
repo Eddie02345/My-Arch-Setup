@@ -221,7 +221,7 @@ chown -R "\$USERNAME:\$USERNAME" /home/\$USERNAME/.config
 sudo -u "\$USERNAME" bash <<'EOPARU'
 set -e
 cd ~
-git clone https://aur.archlinux.org/paru.git
+git clone https://aur.archlinux.org/paru-bin.git
 cd paru
 makepkg -si --noconfirm
 
