@@ -1,99 +1,270 @@
 #!/bin/bash
-set -e  # stop on error
+# =====================================================
+#  Arch Linux Automated Installer (LUKS2 + Btrfs + Hyprland)
+#  - Works on NVMe, SATA, VirtIO (vda)
+#  - Optimized for Intel UHD 620
+#  - GRUB with cryptdevice=UUID for encrypted root
+#  - Hyprland + ecosystem, zram, reflector
+#  - Paru + AUR Catppuccin Mocha theme + MS fonts
+# =====================================================
 
-echo "=== Arch Linux + Hyprland Auto Installer ==="
+set -euo pipefail
 
-# --- Disk Selection ---
-echo "[INFO] Available disks:"
-lsblk -d -o NAME,SIZE,TYPE | grep disk  # list only whole disks
+# -------------------------------
+#  User input
+# -------------------------------
+echo "Available disks:"
+lsblk -dpno NAME,SIZE,MODEL | grep -E "sd|nvme|vd|vda" || lsblk -dpno NAME,SIZE,MODEL
 
-disk_count=$(lsblk -dno NAME,TYPE | grep disk | wc -l)
+echo
+read -rp "Enter target disk (e.g. /dev/nvme0n1 or /dev/sda or /dev/vda): " DISK
+read -rp "Enter hostname: " HOSTNAME
+read -rp "Enter username: " USERNAME
 
-if [ "$disk_count" -eq 1 ]; then
-    # Auto-pick if only 1 disk is detected
-    disk=$(lsblk -dno NAME,TYPE | grep disk | awk '{print $1}')
-    disk="/dev/$disk"
-    echo "[INFO] Auto-selected disk: $disk"
+# Secure password input (hidden)
+read -rsp "Enter root password: " ROOT_PASSWORD; echo
+read -rsp "Enter user password: " USER_PASSWORD; echo
+read -rsp "Enter LUKS password: " LUKS_PASSWORD; echo
+
+# -------------------------------
+#  Variables
+# -------------------------------
+TIMEZONE="Asia/Manila"
+LUKS_NAME="cryptroot"
+SUBVOL_ROOT="@"
+SUBVOL_HOME="@home"
+
+# Detect partition suffix style (nvme uses 'p')
+if [[ "$DISK" =~ nvme ]]; then
+    EFI_PART="${DISK}p1"
+    ROOT_PART="${DISK}p2"
 else
-    # Ask if multiple disks exist
-    read -rp "Enter the target disk (e.g. /dev/sda): " disk
+    EFI_PART="${DISK}1"
+    ROOT_PART="${DISK}2"
 fi
 
-# --- Partitioning (no confirmation, wipes immediately) ---
-echo "[INFO] Wiping and partitioning $disk ..."
-wipefs -a "$disk"            # clear filesystem signatures
-sgdisk -Z "$disk"            # zap GPT/MBR
-sgdisk -n1:0:+512M -t1:ef00 -c1:"EFI System" "$disk"   # 512MB EFI
-sgdisk -n2:0:0     -t2:8300 -c2:"Linux root" "$disk"   # rest = root
+ROOT_PART_UUID=$(blkid -s UUID -o value "$ROOT_PART" || true)
 
-# Handle different disk naming (nvme vs vda/sda)
-if [[ "$disk" =~ "nvme" ]]; then
-    boot="${disk}p1"
-    root="${disk}p2"
-else
-    boot="${disk}1"
-    root="${disk}2"
-fi
+echo "[INFO] Target disk: $DISK"
+echo "[INFO] EFI partition: $EFI_PART"
+echo "[INFO] Root partition (to be LUKS): $ROOT_PART"
 
-# Format partitions
-mkfs.fat -F32 "$boot"
-mkfs.ext4 -F "$root"
+# -------------------------------
+#  Partitioning (DESTROYS DISK)
+# -------------------------------
+echo "[STEP] Wiping partition table and creating GPT partitions..."
+wipefs -a "$DISK" || true
+sgdisk -Z "$DISK"
+sgdisk -n 1:0:+1G -t 1:ef00 -c 1:"EFI System" "$DISK"
+sgdisk -n 2:0:0 -t 2:8300 -c 2:"Linux root" "$DISK"
 
-# Mount target system
-mount "$root" /mnt
-mkdir /mnt/boot
-mount "$boot" /mnt/boot
+# -------------------------------
+#  LUKS Encryption
+# -------------------------------
+echo "[STEP] Setting up LUKS2 on $ROOT_PART..."
+printf "%s" "$LUKS_PASSWORD" | cryptsetup luksFormat "$ROOT_PART" --type luks2 --batch-mode --key-file=-
+printf "%s" "$LUKS_PASSWORD" | cryptsetup open "$ROOT_PART" "$LUKS_NAME" --key-file=-
 
-# --- Base System Installation ---
-echo "[INFO] Installing base system ..."
-pacstrap /mnt base linux linux-firmware sudo nano networkmanager reflector
+# -------------------------------
+#  Filesystem: Btrfs + subvolumes
+# -------------------------------
+echo "[STEP] Creating Btrfs filesystem and subvolumes..."
+mkfs.btrfs -f "/dev/mapper/$LUKS_NAME"
+mount "/dev/mapper/$LUKS_NAME" /mnt
+btrfs subvolume create /mnt/$SUBVOL_ROOT
+btrfs subvolume create /mnt/$SUBVOL_HOME
+umount /mnt
 
-# Generate fstab
+mount -o noatime,compress=zstd:3,space_cache=v2,discard=async,subvol=$SUBVOL_ROOT "/dev/mapper/$LUKS_NAME" /mnt
+mkdir -p /mnt/home
+mount -o noatime,compress=zstd:3,space_cache=v2,discard=async,subvol=$SUBVOL_HOME "/dev/mapper/$LUKS_NAME" /mnt/home
+
+mkfs.fat -F32 "$EFI_PART"
+mkdir -p /mnt/boot
+mount "$EFI_PART" /mnt/boot
+
+# -------------------------------
+#  Mirrors (reflector)
+# -------------------------------
+echo "[STEP] Installing reflector and updating mirrorlist..."
+pacman -Sy --noconfirm --needed reflector
+reflector --country Philippines --country Singapore --country Japan \
+          --latest 30 --protocol https --sort rate \
+          --save /etc/pacman.d/mirrorlist
+
+# -------------------------------
+#  Base system + packages
+# -------------------------------
+echo "[STEP] Installing base system and packages via pacstrap..."
+PACLIST=(
+  base linux linux-firmware
+  networkmanager sudo neovim man-db man-pages
+  base-devel git
+  btrfs-progs dosfstools efibootmgr
+  intel-ucode
+  xorg-xwayland
+  hyprland xdg-desktop-portal-hyprland hyprpolkitagent
+  waybar alacritty sddm
+  pipewire pipewire-pulse wireplumber
+  bluez bluez-utils
+  firewalld acpid
+  ttf-jetbrains-mono-nerd ttf-firacode-nerd
+  zram-generator reflector
+  mesa vulkan-intel libva-intel-driver libva-utils
+  qt5ct qt6ct kvantum-qt5 kvantum-qt6
+)
+
+pacstrap /mnt "${PACLIST[@]}"
+
+# -------------------------------
+#  fstab
+# -------------------------------
+echo "[STEP] Generating /etc/fstab..."
 genfstab -U /mnt >> /mnt/etc/fstab
+ROOT_PART_UUID=$(blkid -s UUID -o value "$ROOT_PART")
 
-# --- System Configuration inside chroot ---
+# -------------------------------
+#  Chroot configuration
+# -------------------------------
+echo "[STEP] Entering chroot to configure system..."
 arch-chroot /mnt /bin/bash <<EOF
-echo "[INFO] Configuring system inside chroot ..."
+set -e
 
-# Timezone & clock
-ln -sf /usr/share/zoneinfo/Asia/Manila /etc/localtime
+TIMEZONE="$TIMEZONE"
+HOSTNAME="$HOSTNAME"
+USERNAME="$USERNAME"
+ROOT_PASS="$ROOT_PASSWORD"
+USER_PASS="$USER_PASSWORD"
+LUKS_NAME="$LUKS_NAME"
+ROOT_PART_UUID="$ROOT_PART_UUID"
+
+# -------------------------------
+#  Time & locale
+# -------------------------------
+ln -sf /usr/share/zoneinfo/\$TIMEZONE /etc/localtime
 hwclock --systohc
-
-# Locale
-echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
 locale-gen
 echo "LANG=en_US.UTF-8" > /etc/locale.conf
+echo "\$HOSTNAME" > /etc/hostname
 
-# Hostname
-echo "arch" > /etc/hostname
+# -------------------------------
+#  Users & sudo
+# -------------------------------
+echo "root:\$ROOT_PASS" | chpasswd
+useradd -m -G wheel -s /bin/bash "\$USERNAME"
+echo "\$USERNAME:\$USER_PASS" | chpasswd
+echo "%wheel ALL=(ALL) ALL" > /etc/sudoers.d/wheel
+chmod 0440 /etc/sudoers.d/wheel
 
-# Enable networking
+# -------------------------------
+#  Initramfs & bootloader
+# -------------------------------
+sed -i 's/^MODULES=()/MODULES=(btrfs)/' /etc/mkinitcpio.conf
+sed -i 's/^HOOKS=.*/HOOKS=(base udev autodetect keyboard keymap modconf block encrypt filesystems btrfs filesystems fsck)/' /etc/mkinitcpio.conf
+mkinitcpio -P
+
+pacman -S --noconfirm grub
+sed -i "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=\$ROOT_PART_UUID:\$LUKS_NAME root=/dev/mapper/\$LUKS_NAME loglevel=3 quiet\"|" /etc/default/grub
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+grub-mkconfig -o /boot/grub/grub.cfg
+
+# -------------------------------
+#  Enable services
+# -------------------------------
 systemctl enable NetworkManager
-
-# Optimize mirrors for PH/SG/JP
-reflector --country Philippines --country Singapore --country Japan \
-    --age 12 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
-
-# Install systemd-boot bootloader
-bootctl --path=/boot install
-cat <<BOOT > /boot/loader/entries/arch.conf
-title   Arch Linux
-linux   /vmlinuz-linux
-initrd  /initramfs-linux.img
-options root=$root rw
-BOOT
-
-# Install Hyprland + essential packages
-pacman -S --noconfirm \
-    mesa vulkan-intel libva-intel-driver libva-utils \  # Intel graphics stack
-    xorg-xwayland \                                    # XWayland support
-    hyprland xdg-desktop-portal-hyprland \             # Wayland compositor + portal
-    sddm waybar alacritty firefox \                    # desktop environment
-    network-manager-applet                             # tray network tool
-
-# Enable display manager
 systemctl enable sddm
+systemctl enable zram-generator@zram0.service || true
+
+# -------------------------------
+#  WiFi power save off
+# -------------------------------
+mkdir -p /etc/NetworkManager/conf.d
+cat > /etc/NetworkManager/conf.d/wifi-powersave.conf <<NMCONF
+[connection]
+wifi.powersave = 2
+NMCONF
+
+# -------------------------------
+#  Zram config
+# -------------------------------
+mkdir -p /etc/systemd/zram-generator.conf.d
+cat > /etc/systemd/zram-generator.conf.d/custom-zram.conf <<ZCONF
+[zram0]
+zram-size = ram / 2
+compression-algorithm = zstd
+swap-priority = 100
+ZCONF
+
+systemctl daemon-reexec
+
+# -------------------------------
+#  Hyprland config + clipboard
+# -------------------------------
+sudo -u "\$USERNAME" mkdir -p /home/\$USERNAME/.config/hypr
+cat >> /home/\$USERNAME/.config/hypr/hyprland.conf <<HCONF
+env = QT_QPA_PLATFORMTHEME,qt5ct
+env = QT_STYLE_OVERRIDE,kvantum
+env = QT_AUTO_SCREEN_SCALE_FACTOR,1
+env = QT6CT_PLATFORMTHEME,qt6ct
+
+exec-once = wl-paste --type text --watch cliphist store
+exec-once = wl-paste --type image --watch cliphist store
+bind = SUPER, V, exec, cliphist list | wofi --dmenu | cliphist decode | wl-copy
+HCONF
+chown -R "\$USERNAME:\$USERNAME" /home/\$USERNAME/.config
+
+# -------------------------------
+#  Paru + AUR packages + Catppuccin theme
+# -------------------------------
+sudo -u "\$USERNAME" bash <<'EOPARU'
+set -e
+cd ~
+git clone https://aur.archlinux.org/paru.git
+cd paru
+makepkg -si --noconfirm
+
+paru -S --noconfirm \
+    catppuccin-gtk-theme-mocha \
+    ttf-ms-fonts \
+    catppuccin-kvantum-theme-git \
+    catppuccin-sddm-theme-git
+EOPARU
+
+# -------------------------------
+#  Apply Catppuccin Mocha theme for GTK & Qt & SDDM
+# -------------------------------
+sudo -u "\$USERNAME" mkdir -p /home/\$USERNAME/.config/gtk-3.0 /home/\$USERNAME/.config/gtk-4.0 /home/\$USERNAME/.config/Kvantum
+cat > /home/\$USERNAME/.config/gtk-3.0/settings.ini <<GTKCONF
+[Settings]
+gtk-theme-name=Catppuccin-Mocha-Standard-Blue-Dark
+gtk-icon-theme-name=Papirus-Dark
+gtk-font-name=JetBrainsMono Nerd Font 11
+GTKCONF
+
+cp /home/\$USERNAME/.config/gtk-3.0/settings.ini /home/\$USERNAME/.config/gtk-4.0/settings.ini
+
+cat > /home/\$USERNAME/.config/Kvantum/kvantum.kvconfig <<KVCONF
+[General]
+theme=Catppuccin-Mocha
+KVCONF
+
+cat > /home/\$USERNAME/.config/qt5ct.conf <<QTCONF
+[Appearance]
+style=kvantum
+icon_theme=Papirus-Dark
+QTCONF
+
+cp /home/\$USERNAME/.config/qt5ct.conf /home/\$USERNAME/.config/qt6ct.conf
+
+mkdir -p /etc/sddm.conf.d
+cat > /etc/sddm.conf.d/theme.conf <<SDDMCONF
+[Theme]
+Current=catppuccin-mocha
+SDDMCONF
+
+chown -R "\$USERNAME:\$USERNAME" /home/\$USERNAME/.config
 EOF
 
-echo "=== Installation complete! ==="
-echo "👉 Reboot into your new Arch Linux with Hyprland."
+echo "[DONE] Installation finished!"
+echo "Reboot -> remove ISO -> log in via SDDM -> select Hyprland session."
