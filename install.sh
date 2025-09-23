@@ -3,22 +3,10 @@
 #  Automated Arch Linux Installation Script
 #  Supports NVMe and SATA disks
 #  Features: LUKS + Btrfs, Hyprland setup, zram, configs
-#  Author: You
+#  Includes reflector for faster mirrors
 # =====================================================
 
 set -euo pipefail
-
-# -------------------------------
-# FUNCTIONS
-# -------------------------------
-
-confirm() {
-    read -rp "$1 [y/N]: " response
-    case "$response" in
-        [yY][eE][sS]|[yY]) true ;;
-        *) false ;;
-    esac
-}
 
 # -------------------------------
 # USER INPUT
@@ -29,7 +17,6 @@ lsblk -dpno NAME,SIZE | grep -E "sd|nvme"
 
 echo
 read -rp "Enter target disk (e.g., /dev/nvme0n1 or /dev/sda): " DISK
-
 read -rp "Enter hostname: " HOSTNAME
 read -rp "Enter username: " USERNAME
 
@@ -94,6 +81,14 @@ mount -o noatime,compress=zstd,space_cache=v2,discard=async,subvol=$SUBVOL_HOME 
 
 mkdir -p /mnt/boot
 mount "$EFI_PART" /mnt/boot
+
+# -------------------------------
+# MIRRORS
+# -------------------------------
+
+echo "[*] Optimizing mirrors with reflector..."
+pacman -Sy --noconfirm reflector
+reflector --country Philippines --country Singapore --latest 20 --sort rate --save /etc/pacman.d/mirrorlist
 
 # -------------------------------
 # BASE INSTALL
