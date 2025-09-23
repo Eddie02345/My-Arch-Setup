@@ -1,11 +1,14 @@
 #!/bin/bash
 # =====================================================
 #  Arch Linux Automated Installer (LUKS2 + Btrfs + Hyprland)
-#  - Works on NVMe, SATA, VirtIO (vda)
-#  - Optimized for Intel UHD 620
-#  - GRUB with cryptdevice=UUID for encrypted root
-#  - Hyprland + ecosystem, zram, reflector
-#  - Paru + AUR Catppuccin Mocha theme + MS fonts
+#  Supports NVMe, SATA, VirtIO (vda)
+#  Optimized for Intel UHD 620
+#  Features:
+#    - GRUB with cryptdevice=UUID
+#    - Hyprland + Wayland apps
+#    - zram
+#    - Reflector for fast mirrors
+#    - Automatic Paru + Catppuccin Mocha theme applied
 # =====================================================
 
 set -euo pipefail
@@ -17,11 +20,11 @@ echo "Available disks:"
 lsblk -dpno NAME,SIZE,MODEL | grep -E "sd|nvme|vd|vda" || lsblk -dpno NAME,SIZE,MODEL
 
 echo
-read -rp "Enter target disk (e.g. /dev/nvme0n1 or /dev/sda or /dev/vda): " DISK
+read -rp "Enter target disk (e.g. /dev/nvme0n1, /dev/sda, /dev/vda): " DISK
 read -rp "Enter hostname: " HOSTNAME
 read -rp "Enter username: " USERNAME
 
-# Secure password input (hidden)
+# Secure password input
 read -rsp "Enter root password: " ROOT_PASSWORD; echo
 read -rsp "Enter user password: " USER_PASSWORD; echo
 read -rsp "Enter LUKS password: " LUKS_PASSWORD; echo
@@ -34,7 +37,7 @@ LUKS_NAME="cryptroot"
 SUBVOL_ROOT="@"
 SUBVOL_HOME="@home"
 
-# Detect partition suffix style (nvme uses 'p')
+# Partition suffix (nvme uses 'p')
 if [[ "$DISK" =~ nvme ]]; then
     EFI_PART="${DISK}p1"
     ROOT_PART="${DISK}p2"
@@ -43,16 +46,14 @@ else
     ROOT_PART="${DISK}2"
 fi
 
-ROOT_PART_UUID=$(blkid -s UUID -o value "$ROOT_PART" || true)
-
 echo "[INFO] Target disk: $DISK"
 echo "[INFO] EFI partition: $EFI_PART"
-echo "[INFO] Root partition (to be LUKS): $ROOT_PART"
+echo "[INFO] Root partition: $ROOT_PART"
 
 # -------------------------------
 #  Partitioning (DESTROYS DISK)
 # -------------------------------
-echo "[STEP] Wiping partition table and creating GPT partitions..."
+echo "[STEP] Wiping disk and creating partitions..."
 wipefs -a "$DISK" || true
 sgdisk -Z "$DISK"
 sgdisk -n 1:0:+1G -t 1:ef00 -c 1:"EFI System" "$DISK"
@@ -61,12 +62,12 @@ sgdisk -n 2:0:0 -t 2:8300 -c 2:"Linux root" "$DISK"
 # -------------------------------
 #  LUKS Encryption
 # -------------------------------
-echo "[STEP] Setting up LUKS2 on $ROOT_PART..."
+echo "[STEP] Setting up LUKS2..."
 printf "%s" "$LUKS_PASSWORD" | cryptsetup luksFormat "$ROOT_PART" --type luks2 --batch-mode --key-file=-
 printf "%s" "$LUKS_PASSWORD" | cryptsetup open "$ROOT_PART" "$LUKS_NAME" --key-file=-
 
 # -------------------------------
-#  Filesystem: Btrfs + subvolumes
+#  Btrfs + subvolumes
 # -------------------------------
 echo "[STEP] Creating Btrfs filesystem and subvolumes..."
 mkfs.btrfs -f "/dev/mapper/$LUKS_NAME"
@@ -84,7 +85,7 @@ mkdir -p /mnt/boot
 mount "$EFI_PART" /mnt/boot
 
 # -------------------------------
-#  Mirrors (reflector)
+#  Mirrors
 # -------------------------------
 echo "[STEP] Installing reflector and updating mirrorlist..."
 pacman -Sy --noconfirm --needed reflector
@@ -95,7 +96,7 @@ reflector --country Philippines --country Singapore --country Japan \
 # -------------------------------
 #  Base system + packages
 # -------------------------------
-echo "[STEP] Installing base system and packages via pacstrap..."
+echo "[STEP] Installing base system and packages..."
 PACLIST=(
   base linux linux-firmware
   networkmanager sudo neovim man-db man-pages
@@ -111,7 +112,7 @@ PACLIST=(
   ttf-jetbrains-mono-nerd ttf-firacode-nerd
   zram-generator reflector
   mesa vulkan-intel libva-intel-driver libva-utils
-  qt5ct qt6ct kvantum-qt5 kvantum-qt6
+  qt5ct qt6ct kvantum
 )
 
 pacstrap /mnt "${PACLIST[@]}"
@@ -126,7 +127,7 @@ ROOT_PART_UUID=$(blkid -s UUID -o value "$ROOT_PART")
 # -------------------------------
 #  Chroot configuration
 # -------------------------------
-echo "[STEP] Entering chroot to configure system..."
+echo "[STEP] Configuring system in chroot..."
 arch-chroot /mnt /bin/bash <<EOF
 set -e
 
