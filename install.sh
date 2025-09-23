@@ -1,192 +1,201 @@
 #!/bin/bash
-set -euo pipefail
-
 # =====================================================
 #  Automated Arch Linux Installation Script
-# =====================================================
-# Features:
-# - Disk partitioning with GPT
-# - Full disk encryption (LUKS2) + Btrfs subvolumes
-# - EFI boot with GRUB
-# - Hyprland desktop environment + ecosystem
-# - ZRAM swap setup
-# - WiFi powersave disabled
-# - paru bootstrap for AUR packages
+#  Supports NVMe and SATA disks
+#  Features: LUKS + Btrfs, Hyprland setup, zram, configs
+#  Author: You
 # =====================================================
 
-# -------------------------
-# Dependency check
-# -------------------------
-for cmd in sgdisk cryptsetup mkfs.btrfs btrfs mkfs.fat pacstrap genfstab arch-chroot; do
-    command -v $cmd >/dev/null || { echo "❌ $cmd not found. Install it first."; exit 1; }
-done
+set -euo pipefail
 
-# -------------------------
-# User prompts
-# -------------------------
-read -rp "Enter target disk (e.g., /dev/nvme0n1): " DISK
+# -------------------------------
+# FUNCTIONS
+# -------------------------------
+
+confirm() {
+    read -rp "$1 [y/N]: " response
+    case "$response" in
+        [yY][eE][sS]|[yY]) true ;;
+        *) false ;;
+    esac
+}
+
+# -------------------------------
+# USER INPUT
+# -------------------------------
+
+echo "Available disks:"
+lsblk -dpno NAME,SIZE | grep -E "sd|nvme"
+
+echo
+read -rp "Enter target disk (e.g., /dev/nvme0n1 or /dev/sda): " DISK
+
 read -rp "Enter hostname: " HOSTNAME
 read -rp "Enter username: " USERNAME
+
+# Secure password input
 read -rsp "Enter root password: " ROOT_PASSWORD; echo
 read -rsp "Enter user password: " USER_PASSWORD; echo
 read -rsp "Enter LUKS password: " LUKS_PASSWORD; echo
 
-# -------------------------
-# Variables
-# -------------------------
-LUKS_NAME=cryptroot
-EFI_PART="${DISK}p1"
-ROOT_PART="${DISK}p2"
+# -------------------------------
+# VARIABLES
+# -------------------------------
+
 TIMEZONE="Asia/Manila"
+LUKS_NAME="cryptroot"
 SUBVOL_ROOT="@"
 SUBVOL_HOME="@home"
 
-# =====================================================
-#  Disk Partitioning & Encryption
-# =====================================================
-# Wipe disk and create:
-#   1. EFI system partition (1G)
-#   2. Root partition (rest of disk)
-sgdisk -Z "$DISK"
-sgdisk -n 1:0:+1G -t 1:ef00 "$DISK"
-sgdisk -n 2:0:0 "$DISK"
+# Handle NVMe vs SATA naming
+if [[ "$DISK" =~ nvme ]]; then
+    EFI_PART="${DISK}p1"
+    ROOT_PART="${DISK}p2"
+else
+    EFI_PART="${DISK}1"
+    ROOT_PART="${DISK}2"
+fi
 
-# Setup LUKS2 encryption
+# -------------------------------
+# PARTITIONING
+# -------------------------------
+
+echo "[*] Partitioning $DISK..."
+sgdisk -Z "$DISK"
+sgdisk -n 1:0:+1G -t 1:ef00 "$DISK"   # EFI
+sgdisk -n 2:0:0 "$DISK"               # Root
+
+# -------------------------------
+# ENCRYPTION SETUP
+# -------------------------------
+
+echo "[*] Setting up LUKS encryption..."
 echo -n "$LUKS_PASSWORD" | cryptsetup luksFormat "$ROOT_PART" --type luks2 --batch-mode --key-file=-
 echo -n "$LUKS_PASSWORD" | cryptsetup open "$ROOT_PART" "$LUKS_NAME" --key-file=-
 
-# =====================================================
-#  Btrfs Filesystem & Subvolumes
-# =====================================================
-mkfs.btrfs "/dev/mapper/$LUKS_NAME"
-mount "/dev/mapper/$LUKS_NAME" /mnt
+# -------------------------------
+# FILESYSTEM SETUP
+# -------------------------------
 
-# Create subvolumes
+echo "[*] Formatting partitions..."
+mkfs.fat -F32 "$EFI_PART"
+mkfs.btrfs "/dev/mapper/$LUKS_NAME"
+
+echo "[*] Creating Btrfs subvolumes..."
+mount "/dev/mapper/$LUKS_NAME" /mnt
 btrfs subvolume create /mnt/$SUBVOL_ROOT
 btrfs subvolume create /mnt/$SUBVOL_HOME
 umount /mnt
 
-# Mount subvolumes
+echo "[*] Mounting subvolumes..."
 mount -o noatime,compress=zstd,space_cache=v2,discard=async,subvol=$SUBVOL_ROOT "/dev/mapper/$LUKS_NAME" /mnt
 mkdir /mnt/home
 mount -o noatime,compress=zstd,space_cache=v2,discard=async,subvol=$SUBVOL_HOME "/dev/mapper/$LUKS_NAME" /mnt/home
 
-# Setup EFI partition
-mkfs.fat -F32 "$EFI_PART"
 mkdir -p /mnt/boot
 mount "$EFI_PART" /mnt/boot
 
-# =====================================================
-#  Base System Install
-# =====================================================
+# -------------------------------
+# BASE INSTALL
+# -------------------------------
+
+echo "[*] Installing base system..."
 pacstrap /mnt base linux linux-firmware linux-headers \
     networkmanager sudo neovim man-db man-pages \
     hyprland xdg-desktop-portal-hyprland \
     bluez bluez-utils firewalld acpid pipewire wireplumber \
     base-devel sddm alacritty ttf-jetbrains-mono-nerd
 
+mkdir -p /mnt/etc
 genfstab -U /mnt >> /mnt/etc/fstab
 
-# =====================================================
-#  Inside Chroot Configuration
-# =====================================================
+UUID=$(blkid -s UUID -o value "$ROOT_PART")
+
+# -------------------------------
+# CHROOT CONFIG
+# -------------------------------
+
 arch-chroot /mnt /bin/bash <<EOF
-# -------------------------
-# Time & Host setup
-# -------------------------
+echo "[*] Inside chroot..."
+
+# Time & locale
 ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
 hwclock --systohc
+
+# Hostname
 echo "$HOSTNAME" > /etc/hostname
 
-# -------------------------
-# User accounts
-# -------------------------
+# Users
 echo "root:$ROOT_PASSWORD" | chpasswd
 useradd -m -G wheel -s /bin/bash "$USERNAME"
 echo "$USERNAME:$USER_PASSWORD" | chpasswd
 echo "%wheel ALL=(ALL) ALL" > /etc/sudoers.d/wheel
 chmod 0440 /etc/sudoers.d/wheel
 
-# -------------------------
-# Initramfs configuration
-# -------------------------
+# Initramfs
 sed -i 's/^MODULES=()/MODULES=(btrfs)/' /etc/mkinitcpio.conf
 sed -i 's/^HOOKS=.*/HOOKS=(base udev autodetect keyboard keymap modconf block encrypt filesystems fsck)/' /etc/mkinitcpio.conf
 mkinitcpio -P
 
-# -------------------------
-# Bootloader (GRUB + EFI)
-# -------------------------
+# Bootloader
 pacman -S --noconfirm grub efibootmgr intel-ucode
-UUID=\$(blkid -s UUID -o value "$ROOT_PART")
-sed -i "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=\$UUID:$LUKS_NAME root=/dev/mapper/$LUKS_NAME quiet\"|" /etc/default/grub
+sed -i "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=$UUID:$LUKS_NAME root=/dev/mapper/$LUKS_NAME quiet\"|" /etc/default/grub
 grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
 grub-mkconfig -o /boot/grub/grub.cfg
 
+# Enable services
 systemctl enable NetworkManager
+systemctl enable sddm
 
-# =====================================================
-#  Extra System Tweaks
-# =====================================================
+# -------------------------------
+# EXTRA CONFIGS
+# -------------------------------
 
-# ---- Disable WiFi powersave ----
+# Disable WiFi power saving
 mkdir -p /etc/NetworkManager/conf.d
-cat << NMCONF > /etc/NetworkManager/conf.d/wifi-powersave.conf
+cat <<NMCONF > /etc/NetworkManager/conf.d/wifi-powersave.conf
 [connection]
 wifi.powersave = 2
 NMCONF
 
-# ---- ZRAM swap ----
+# Zram setup
 pacman -S --noconfirm zram-generator
 mkdir -p /etc/systemd/zram-generator.conf.d
-cat << ZRAMCONF > /etc/systemd/zram-generator.conf.d/custom-zram.conf
+cat <<ZCONF > /etc/systemd/zram-generator.conf.d/custom-zram.conf
 [zram0]
 zram-size = ram / 2
 compression-algorithm = zstd
 swap-priority = 100
-ZRAMCONF
-
+ZCONF
 systemctl daemon-reexec
-systemctl enable --now /dev/zram0.swap
+systemctl enable /dev/zram0.swap
 
-# ---- Hyprland ecosystem packages ----
-pacman -S --noconfirm uwsm libnewt
-pacman -S --noconfirm mesa libva libva-utils libva-intel-driver hyprpolkitagent
-pacman -S --noconfirm waybar swaync qt5-wayland qt6-wayland cliphist dolphin swww qt5ct qt6ct kvantum ttf-firacode-nerd hyprpaper wlsunset
+# Hyprland & tools
+pacman -S --noconfirm uwsm libnewt mesa libva libva-utils libva-intel-driver hyprpolkitagent
+pacman -S --noconfirm waybar swaync qt5-wayland qt6-wayland cliphist dolphin swww qt5ct qt6ct kvantum \
+    ttf-firacode-nerd hyprpaper wlsunset
 pacman -S --noconfirm pipewire wireplumber pipewire-pulse
-
 systemctl --user enable --now hyprpolkitagent.service
 systemctl --user enable --now pipewire-pulse.service
 
-# ---- Paru bootstrap for AUR ----
-cd /home/$USERNAME
-sudo -u $USERNAME git clone https://aur.archlinux.org/paru.git
-cd paru
-sudo -u $USERNAME makepkg -si --noconfirm
-cd ..
-rm -rf paru
+# AUR themes/fonts (requires paru after reboot)
+echo "After reboot, run: paru -S catppuccin-gtk-theme-mocha ttf-ms-fonts"
 
-# Install AUR packages
-sudo -u $USERNAME paru -S --noconfirm catppuccin-gtk-theme-mocha ttf-ms-fonts
-
-# ---- Hyprland configuration tweaks ----
+# Hyprland config
 mkdir -p /home/$USERNAME/.config/hypr
-cat << HYPRAPPEND >> /home/$USERNAME/.config/hypr/hyprland.conf
-
-# --- Extra env settings ---
+cat <<HCONF >> /home/$USERNAME/.config/hypr/hyprland.conf
+# QT + theme env
 env = QT_QPA_PLATFORMTHEME,qt5ct
 env = QT_STYLE_OVERRIDE,kvantum
 env = QT_AUTO_SCREEN_SCALE_FACTOR,1
 env = QT6CT_PLATFORMTHEME,qt6ct
 
-# --- Clipboard integration ---
+# Clipboard history
 exec-once = wl-paste --type text --watch cliphist store
 exec-once = wl-paste --type image --watch cliphist store
 bind = SUPER, V, exec, cliphist list | wofi --dmenu | cliphist decode | wl-copy
-HYPRAPPEND
-
+HCONF
 chown -R $USERNAME:$USERNAME /home/$USERNAME/.config
 EOF
 
-# =====================================================
-echo "✅ Installation finished! You can reboot now."
+echo "[*] Installation complete! You may reboot now."
