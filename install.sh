@@ -32,16 +32,6 @@ read -rsp "Enter user password: " USER_PASSWORD; echo
 read -rsp "Enter LUKS password: " LUKS_PASSWORD; echo
 
 # -------------------------
-# Confirmation (safety!)
-# -------------------------
-echo "WARNING: This will ERASE ALL DATA on $DISK"
-read -rp "Are you absolutely sure you want to continue? (yes/NO): " CONFIRM
-if [[ "\$CONFIRM" != "yes" ]]; then
-    echo "❌ Aborted."
-    exit 1
-fi
-
-# -------------------------
 # Variables
 # -------------------------
 LUKS_NAME=cryptroot
