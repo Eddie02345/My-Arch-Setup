@@ -22,6 +22,11 @@ EOF
 systemctl daemon-reexec
 systemctl enable --now /dev/zram0.swap || echo "ZRAM service may require a reboot to work properly"
 
+#Swap file for backup
+mkswap -U clear --size 4G --file /swapfile
+swapon /swapfile
+echo '/swapfile none swap defaults,pri=10 0 0' | sudo tee -a /etc/fstab > /dev/null
+
 # --------------------------
 # Install essential AUR packages
 # --------------------------
