@@ -112,7 +112,9 @@ PACLIST=(
   ttf-jetbrains-mono-nerd ttf-firacode-nerd
   zram-generator reflector
   mesa vulkan-intel libva-intel-driver libva-utils
-  qt5ct qt6ct kvantum
+  qt5ct qt6ct kvantum hyprpaper cliphist wlsunset
+  nemo swww waybar swaync uwsm libnewt hyprpolkitagent
+  qt5-wayland qt6-wayland
 )
 
 pacstrap /mnt "${PACLIST[@]}"
