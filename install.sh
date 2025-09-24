@@ -114,7 +114,7 @@ PACLIST=(
   mesa vulkan-intel libva-intel-driver libva-utils
   qt5ct qt6ct kvantum hyprpaper cliphist wlsunset
   nemo swww waybar swaync uwsm libnewt hyprpolkitagent
-  qt5-wayland qt6-wayland
+  qt5-wayland qt6-wayland tlp
 )
 
 pacstrap /mnt "${PACLIST[@]}"
@@ -177,7 +177,8 @@ grub-mkconfig -o /boot/grub/grub.cfg
 # -------------------------------
 systemctl enable iwd
 systemctl enable sddm
-systemctl status bluetooth.service
+systemctl enable bluetooth.service
+systemctl enable tlp.service
 
 # -------------------------------
 #  Paru 
