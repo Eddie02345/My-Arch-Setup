@@ -99,7 +99,7 @@ reflector --country Philippines --country Singapore --country Japan \
 echo "[STEP] Installing base system and packages..."
 PACLIST=(
   base linux linux-firmware
-  networkmanager sudo neovim man-db man-pages
+  iwd dbus fuzzel sudo neovim man-db man-pages
   base-devel git
   btrfs-progs dosfstools efibootmgr
   intel-ucode
@@ -173,8 +173,9 @@ grub-mkconfig -o /boot/grub/grub.cfg
 # -------------------------------
 #  Enable services
 # -------------------------------
-systemctl enable NetworkManager
+systemctl enable iwd
 systemctl enable sddm
+systemctl status bluetooth.service
 
 # -------------------------------
 #  Paru 
