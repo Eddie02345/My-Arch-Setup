@@ -3,18 +3,10 @@
 # Run as root AFTER first boot
 set -euo pipefail
 
-# Set variables
-USERNAME="your_username_here"  # <-- replace with your actual username
+read -rp "Enter username: " USERNAME
 
-# --------------------------
-# Network / WiFi power saving
-# --------------------------
-mkdir -p /etc/NetworkManager/conf.d/
-cat <<EOF > /etc/NetworkManager/conf.d/wifi-powersave.conf
-[connection]
-wifi.powersave = 2
-EOF
-systemctl restart NetworkManager
+# Set variables
+USERNAME="your_username_here" 
 
 # --------------------------
 # ZRAM setup
@@ -35,7 +27,7 @@ systemctl enable --now /dev/zram0.swap || echo "ZRAM service may require a reboo
 # --------------------------
 sudo -u "$USERNAME" paru -S --noconfirm \
 uwsm libnewt mesa libva libva-utils libva-intel-driver hyprpolkitagent \
-waybar swaync qt5-wayland qt6-wayland cliphist dolphin swww qt5ct qt6ct kvantum \
+waybar swaync qt5-wayland qt6-wayland cliphist nemo swww qt5ct qt6ct kvantum \
 ttf-firacode-nerd hyprpaper wlsunset pipewire wireplumber pipewire-pulse \
 catppuccin-gtk-theme-mocha ttf-ms-fonts
 
