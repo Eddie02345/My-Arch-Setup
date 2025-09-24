@@ -26,9 +26,7 @@ systemctl enable --now /dev/zram0.swap || echo "ZRAM service may require a reboo
 # Install essential AUR packages
 # --------------------------
 sudo -u "$USERNAME" paru -S --noconfirm \
-uwsm libnewt mesa libva libva-utils libva-intel-driver hyprpolkitagent \
-waybar swaync qt5-wayland qt6-wayland cliphist nemo swww qt5ct qt6ct kvantum \
-ttf-firacode-nerd hyprpaper wlsunset pipewire wireplumber pipewire-pulse \
+ttf-firacode-nerd \
 catppuccin-gtk-theme-mocha ttf-ms-fonts
 
 # --------------------------
