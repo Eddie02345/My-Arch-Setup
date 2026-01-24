@@ -1,11 +1,10 @@
 #!/bin/bash
 # =====================================================
-#  Arch Linux Installer: ThinkPad T470 (Reflector Fixed)
-#  - Fix: Removed 'pacman -S reflector' to prevent Python crash
+#  Arch Linux Installer: ThinkPad T470 (NO REFLECTOR)
+#  - Fix: Replaced broken Reflector with simple curl
 #  - Hardware: i5-7300U (Kaby Lake) | HD 620
 #  - Stack: LUKS2 + Btrfs + Hyprland
 #  - Performance: ZRAM Optimized (8GB RAM Target)
-#  - Visuals: Catppuccin Mocha Auto-Applied
 # =====================================================
 
 set -e
@@ -38,7 +37,7 @@ get_verified_password() {
 
 clear
 echo "=========================================="
-echo "   THINKPAD T470 ARCH INSTALLER (v4)"
+echo "   THINKPAD T470 ARCH INSTALLER (v5)"
 echo "=========================================="
 lsblk -dpno NAME,SIZE,MODEL,TYPE | grep -E "disk|nvme"
 
@@ -124,13 +123,12 @@ mount "$EFI_PART" /mnt/boot
 # -------------------------------
 #  4. Base Install
 # -------------------------------
-log "Updating Mirrors..."
-# FIX: Do NOT install reflector. Use the built-in one.
-# Just sync the database for the later install steps.
-pacman -Sy
+log "Fetching Mirrorlist (Manual Method)..."
+# We fetch mirrors for PH, SG, and JP directly from Arch Linux and uncomment them
+curl -s "https://archlinux.org/mirrorlist/?country=PH&country=SG&country=JP&protocol=https&use_mirror_status=on" | sed -e 's/^#Server/Server/' -e '/^#/d' > /etc/pacman.d/mirrorlist
 
-log "Generating optimized mirrorlist..."
-reflector --country Philippines --country Singapore --country Japan --latest 20 --sort rate --save /etc/pacman.d/mirrorlist
+log "Syncing databases..."
+pacman -Sy
 
 log "Installing Packages..."
 # Core + T470 Hardware (Kaby Lake)
