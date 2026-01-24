@@ -1,9 +1,9 @@
 #!/bin/bash
 # =====================================================
-#  Arch Linux Installer: ThinkPad T470 (v11 + Reflector)
-#  - Strategy: Safe Mode (OS first, Paru/Themes later).
-#  - Feature: Installs Reflector on the final system.
-#  - Fix: Prevents "libalpm" and "device in use" errors.
+#  Arch Linux Installer: ThinkPad T470 (DEFINITIVE)
+#  - Hardware: i5-7300U (Kaby Lake) | HD 620
+#  - Fixes: libalpm (Paru Source), Network (DNS), Audio
+#  - ZRAM: Optimized for 8GB RAM
 # =====================================================
 
 set -e
@@ -36,7 +36,7 @@ get_verified_password() {
 
 clear
 echo "=========================================="
-echo "   THINKPAD T470 INSTALLER (v11)"
+echo "   THINKPAD T470 INSTALLER (DEFINITIVE)"
 echo "=========================================="
 lsblk -dpno NAME,SIZE,MODEL,TYPE | grep -E "disk|nvme"
 
@@ -66,9 +66,9 @@ read -p "!!! DESTROY DATA ON $DISK? (y/N): " CONFIRM
 [[ "$CONFIRM" == "y" ]] || exit 1
 
 # -------------------------------
-#  2. Pre-Flight Cleanup
+#  2. Pre-Flight Cleanup (Force Unlock)
 # -------------------------------
-log "Forcing cleanup..."
+log "Forcing cleanup of locks..."
 swapoff -a || true
 umount -R /mnt || true
 cryptsetup close cryptroot || true
@@ -118,18 +118,19 @@ mount "$EFI_PART" /mnt/boot
 # -------------------------------
 log "Setting up Mirrors..."
 cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak
-# Using system reflector SAFELY (no update)
+# Use built-in Reflector SAFELY (no update, no install)
 if command -v reflector &> /dev/null; then
     log "Using Reflector..."
     reflector --country Philippines --country Singapore --country Japan --latest 10 --sort rate --save /etc/pacman.d/mirrorlist || echo "Reflector failed, using fallback."
 fi
+# Fallback mirror just in case
 echo "Server = https://geo.mirror.pkgbuild.com/\$repo/os/\$arch" >> /etc/pacman.d/mirrorlist
 
 log "Syncing databases..."
 pacman -Sy
 
 log "Installing Packages..."
-# Added 'reflector' to this list
+# Note: reflector added to final system for future use
 PKGS=(base linux linux-firmware base-devel git rust sudo efibootmgr dosfstools btrfs-progs
       iwd bluez bluez-utils reflector
       intel-ucode mesa vulkan-intel intel-media-driver libva-utils
@@ -166,10 +167,17 @@ echo "$USERNAME:$USER_PASSWORD" | chpasswd
 echo "%wheel ALL=(ALL) ALL" > /etc/sudoers.d/wheel
 chmod 0440 /etc/sudoers.d/wheel
 
-# Network & ZRAM
+# Network & DNS Fix (Systemd-Resolved)
 mkdir -p /etc/iwd
-echo -e "[General]\nEnableNetworkConfiguration=true" > /etc/iwd/main.conf
+# Configure IWD to use systemd-resolved for DNS
+cat > /etc/iwd/main.conf <<INI
+[General]
+EnableNetworkConfiguration=true
+[Network]
+NameResolvingService=systemd
+INI
 
+# ZRAM (8GB Optimized)
 cat > /etc/systemd/zram-generator.conf <<INI
 [zram0]
 zram-size = min(ram, 8192)
@@ -180,14 +188,14 @@ vm.swappiness = 100
 vm.page-cluster = 0
 INI
 
-# Environment
+# Environment (VA-API & Theming)
 cat >> /etc/environment <<ENV
 LIBVA_DRIVER_NAME=iHD
 QT_QPA_PLATFORMTHEME=qt5ct
 QT_STYLE_OVERRIDE=kvantum
 ENV
 
-# Bootloader
+# Bootloader (GRUB + LUKS + Kaby Lake GuC)
 pacman -S --noconfirm grub
 sed -i 's/^HOOKS=.*/HOOKS=(base udev autodetect modconf keyboard keymap block encrypt filesystems btrfs fsck)/' /etc/mkinitcpio.conf
 mkinitcpio -P
@@ -196,26 +204,34 @@ grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Arch
 grub-mkconfig -o /boot/grub/grub.cfg
 
 # Services
-systemctl enable iwd bluetooth tlp sddm fstrim.timer
+systemctl enable iwd
+systemctl enable systemd-resolved
+systemctl enable bluetooth
+systemctl enable tlp
+systemctl enable sddm
+systemctl enable fstrim.timer
 
 # -------------------------------
-#  6. Post-Install Script (Paru + Themes)
+#  6. Create Post-Install Script
 # -------------------------------
-cat > /home/$USERNAME/install_themes.sh <<POSTINSTALL
+cat > /home/$USERNAME/finish_setup.sh <<POSTINSTALL
 #!/bin/bash
 set -e
 
-echo ":: Installing Paru (AUR Helper)..."
-git clone https://aur.archlinux.org/paru-bin.git
-cd paru-bin
+echo ":: 1/3 Compiling Paru from Source..."
+echo "   (This fixes the libalpm error. It will take ~10 mins.)"
+rm -rf paru
+git clone https://aur.archlinux.org/paru.git
+cd paru
 makepkg -si --noconfirm
 cd ..
-rm -rf paru-bin
+rm -rf paru
 
-echo ":: Installing Catppuccin Themes..."
-paru -S --noconfirm catppuccin-gtk-theme-mocha catppuccin-kvantum
+echo ":: 2/3 Installing Catppuccin Themes..."
+# We use the main package to avoid "target not found" errors
+paru -S --noconfirm catppuccin-gtk-theme catppuccin-kvantum
 
-echo ":: Applying Themes..."
+echo ":: 3/3 Configuring Visuals (Mocha)..."
 mkdir -p ~/.config/{gtk-3.0,gtk-4.0,Kvantum,qt5ct}
 
 # GTK Settings
@@ -241,15 +257,15 @@ cat > ~/.config/Kvantum/kvantum.kvconfig <<INI
 theme=Catppuccin-Mocha-Blue
 INI
 
-echo "DONE! Paru and Themes are installed."
-echo "You can now enjoy your Hyprland setup."
+echo "DONE! Setup Complete."
+echo "You can now reboot or launch Hyprland."
 POSTINSTALL
 
-# Make executable
-chmod +x /home/$USERNAME/install_themes.sh
-chown $USERNAME:$USERNAME /home/$USERNAME/install_themes.sh
+# Make executable & Fix permissions
+chmod +x /home/$USERNAME/finish_setup.sh
+chown $USERNAME:$USERNAME /home/$USERNAME/finish_setup.sh
 
 EOF
 
-log "Installation Complete! Reboot now."
-log "Login, open terminal, and run: ./install_themes.sh"
+log "Installation Complete! Unplug USB and Reboot."
+log "Login, then run: ./finish_setup.sh"
