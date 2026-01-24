@@ -1,9 +1,9 @@
 #!/bin/bash
 # =====================================================
-#  Arch Linux Installer: ThinkPad T470 (v6 Final)
+#  Arch Linux Installer: ThinkPad T470 (v7 Bulletproof)
+#  - Fix: Creates /etc/iwd directory before writing config
 #  - Fix: Uses built-in Reflector (no updates, no curl)
-#  - Fallback: Adds a backup mirror if Reflector fails
-#  - Cleanup: forceful drive unlock before starting
+#  - Fix: Forceful cleanup (swapoff, unmount)
 # =====================================================
 
 set -e
@@ -36,7 +36,7 @@ get_verified_password() {
 
 clear
 echo "=========================================="
-echo "   THINKPAD T470 ARCH INSTALLER (v6)"
+echo "   THINKPAD T470 ARCH INSTALLER (v7)"
 echo "=========================================="
 lsblk -dpno NAME,SIZE,MODEL,TYPE | grep -E "disk|nvme"
 
@@ -69,7 +69,6 @@ read -p "!!! DESTROY DATA ON $DISK? (y/N): " CONFIRM
 #  2. Pre-Flight Cleanup
 # -------------------------------
 log "Forcing cleanup of previous mounts..."
-# This attempts to fix "Device in use" errors if you didn't reboot
 swapoff -a || true
 umount -R /mnt || true
 cryptsetup close cryptroot || true
@@ -96,7 +95,6 @@ udevadm settle
 sleep 2
 
 log "Encrypting Root..."
-# If this fails, REBOOT is the only fix.
 echo -n "$LUKS_PASSWORD" | cryptsetup luksFormat "$ROOT_PART" --type luks2 --batch-mode --key-file=-
 echo -n "$LUKS_PASSWORD" | cryptsetup open "$ROOT_PART" cryptroot --key-file=-
 
@@ -124,26 +122,18 @@ mount "$EFI_PART" /mnt/boot
 # -------------------------------
 log "Setting up Mirrors..."
 
-# 1. Back up existing list
+# Safe Mirror Strategy: Try Reflector, fallback to Global
 cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak
-
-# 2. Try to use the BUILT-IN reflector (do not install/update it)
 if command -v reflector &> /dev/null; then
-    log "Using system Reflector to find fast mirrors..."
-    # We use a timeout so it doesn't hang forever
+    log "Using system Reflector..."
     reflector --country Philippines --country Singapore --country Japan --latest 10 --sort rate --save /etc/pacman.d/mirrorlist || echo "Reflector failed, using fallback."
-else
-    log "Reflector not found, skipping."
 fi
-
-# 3. Fallback: Append a reliable global mirror just in case Reflector returned nothing or failed
 echo "Server = https://geo.mirror.pkgbuild.com/\$repo/os/\$arch" >> /etc/pacman.d/mirrorlist
 
 log "Syncing databases..."
 pacman -Sy
 
 log "Installing Packages..."
-# Core + T470 Hardware (Kaby Lake)
 PKGS=(base linux linux-firmware base-devel git rust sudo efibootmgr dosfstools btrfs-progs
       iwd bluez bluez-utils
       intel-ucode mesa vulkan-intel intel-media-driver libva-utils
@@ -180,7 +170,8 @@ echo "$USERNAME:$USER_PASSWORD" | chpasswd
 echo "%wheel ALL=(ALL) ALL" > /etc/sudoers.d/wheel
 chmod 0440 /etc/sudoers.d/wheel
 
-# Network (IWD Standalone)
+# Network (IWD Standalone) - FIXED: mkdir first
+mkdir -p /etc/iwd
 echo -e "[General]\nEnableNetworkConfiguration=true" > /etc/iwd/main.conf
 
 # ZRAM OPTIMIZATION (8GB RAM Target)
