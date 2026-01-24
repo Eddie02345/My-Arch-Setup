@@ -1,18 +1,9 @@
-My apologies. I switched to yay temporarily because yay-bin has fewer dependency issues than paru when the package databases are desynchronized (which caused your libalpm error).
-However, you asked for paru, so we will use paru.
-To fix the error guaranteed, we will use the "Two-Stage" method:
- * Stage 1 (The Script): Installs the OS, Drivers, and Hyprland. It skips compiling Paru to avoid the crash.
- * Stage 2 (Post-Login): Creates a script for you to run after you reboot. This compiles Paru on your fresh, running system where libraries are perfectly synced.
-Here is the Corrected V10 Script using paru.
-Step 1: Reboot
-You must reboot to clear the previous "device in use" errors.
-Step 2: Run "Safe Mode + Paru" Script
 #!/bin/bash
 # =====================================================
-#  Arch Linux Installer: ThinkPad T470 (v10 Safe Mode)
-#  - Strategy: Installs OS first. Compiles Paru AFTER reboot.
-#  - Fix: Bypasses libalpm crash by delaying compilation.
-#  - Preference: Uses PARU (not Yay).
+#  Arch Linux Installer: ThinkPad T470 (v11 + Reflector)
+#  - Strategy: Safe Mode (OS first, Paru/Themes later).
+#  - Feature: Installs Reflector on the final system.
+#  - Fix: Prevents "libalpm" and "device in use" errors.
 # =====================================================
 
 set -e
@@ -45,7 +36,7 @@ get_verified_password() {
 
 clear
 echo "=========================================="
-echo "   THINKPAD T470 INSTALLER (v10 PARU)"
+echo "   THINKPAD T470 INSTALLER (v11)"
 echo "=========================================="
 lsblk -dpno NAME,SIZE,MODEL,TYPE | grep -E "disk|nvme"
 
@@ -127,7 +118,7 @@ mount "$EFI_PART" /mnt/boot
 # -------------------------------
 log "Setting up Mirrors..."
 cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak
-# Try built-in reflector safely
+# Using system reflector SAFELY (no update)
 if command -v reflector &> /dev/null; then
     log "Using Reflector..."
     reflector --country Philippines --country Singapore --country Japan --latest 10 --sort rate --save /etc/pacman.d/mirrorlist || echo "Reflector failed, using fallback."
@@ -138,9 +129,9 @@ log "Syncing databases..."
 pacman -Sy
 
 log "Installing Packages..."
-# Core + T470 Hardware
+# Added 'reflector' to this list
 PKGS=(base linux linux-firmware base-devel git rust sudo efibootmgr dosfstools btrfs-progs
-      iwd bluez bluez-utils
+      iwd bluez bluez-utils reflector
       intel-ucode mesa vulkan-intel intel-media-driver libva-utils
       sof-firmware acpi_call tlp acpid
       hyprland xdg-desktop-portal-hyprland hyprpaper waybar swaync
@@ -175,7 +166,7 @@ echo "$USERNAME:$USER_PASSWORD" | chpasswd
 echo "%wheel ALL=(ALL) ALL" > /etc/sudoers.d/wheel
 chmod 0440 /etc/sudoers.d/wheel
 
-# Network & ZRAM (Fixing previous errors)
+# Network & ZRAM
 mkdir -p /etc/iwd
 echo -e "[General]\nEnableNetworkConfiguration=true" > /etc/iwd/main.conf
 
@@ -208,14 +199,13 @@ grub-mkconfig -o /boot/grub/grub.cfg
 systemctl enable iwd bluetooth tlp sddm fstrim.timer
 
 # -------------------------------
-#  6. Create Post-Install Script (Uses PARU)
+#  6. Post-Install Script (Paru + Themes)
 # -------------------------------
 cat > /home/$USERNAME/install_themes.sh <<POSTINSTALL
 #!/bin/bash
 set -e
 
 echo ":: Installing Paru (AUR Helper)..."
-# We clone paru-bin because it compiles faster on T470
 git clone https://aur.archlinux.org/paru-bin.git
 cd paru-bin
 makepkg -si --noconfirm
@@ -263,9 +253,3 @@ EOF
 
 log "Installation Complete! Reboot now."
 log "Login, open terminal, and run: ./install_themes.sh"
-
-Instructions
- * Reboot the laptop.
- * Connect to wifi (iwctl).
- * Run the script above.
- * Once finished, reboot again, login, and run ./install_themes.sh.
