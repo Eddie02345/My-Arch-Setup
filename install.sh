@@ -1,7 +1,7 @@
 #!/bin/bash
 # =====================================================
-#  Arch Linux Installer: ThinkPad T470 (FIXED)
-#  - Fix: added aggressive cleanup to prevent "Device in Use"
+#  Arch Linux Installer: ThinkPad T470 (Reflector Fixed)
+#  - Fix: Removed 'pacman -S reflector' to prevent Python crash
 #  - Hardware: i5-7300U (Kaby Lake) | HD 620
 #  - Stack: LUKS2 + Btrfs + Hyprland
 #  - Performance: ZRAM Optimized (8GB RAM Target)
@@ -13,7 +13,6 @@ set -e
 # Colors
 GREEN='\033[0;32m'
 RED='\033[0;31m'
-BLUE='\033[0;34m'
 NC='\033[0m'
 
 log() { echo -e "${GREEN}[STEP] $1${NC}"; }
@@ -39,7 +38,7 @@ get_verified_password() {
 
 clear
 echo "=========================================="
-echo "   THINKPAD T470 ARCH INSTALLER (v3)"
+echo "   THINKPAD T470 ARCH INSTALLER (v4)"
 echo "=========================================="
 lsblk -dpno NAME,SIZE,MODEL,TYPE | grep -E "disk|nvme"
 
@@ -69,16 +68,13 @@ read -p "!!! DESTROY DATA ON $DISK? (y/N): " CONFIRM
 [[ "$CONFIRM" == "y" ]] || exit 1
 
 # -------------------------------
-#  2. Pre-Flight Cleanup (THE FIX)
+#  2. Pre-Flight Cleanup (CRITICAL)
 # -------------------------------
-log "Forcing cleanup of previous mounts/containers..."
-# Turn off any active swap that might lock the disk
+log "Forcing cleanup of previous mounts..."
+# This unlocks the drive if a previous run failed
 swapoff -a || true
-# Unmount anything mounted at /mnt recursively
 umount -R /mnt || true
-# Force close the LUKS container if it was left open
 cryptsetup close cryptroot || true
-# Wait for kernel to process these changes
 udevadm settle
 sleep 1
 
@@ -96,13 +92,13 @@ sgdisk -Z "$DISK"
 sgdisk -n 1:0:+1G -t 1:ef00 -c 1:"EFI" "$DISK"
 sgdisk -n 2:0:0   -t 2:8300 -c 2:"LUKS" "$DISK"
 
-# Tell kernel to reload partition table and WAIT until it's done
+# Reload partition table and wait
 partprobe "$DISK"
 udevadm settle 
 sleep 2
 
 log "Encrypting Root..."
-# If this fails, run 'lsblk' to check if something is still mounted
+# If this fails, REBOOT the computer to clear the locks
 echo -n "$LUKS_PASSWORD" | cryptsetup luksFormat "$ROOT_PART" --type luks2 --batch-mode --key-file=-
 echo -n "$LUKS_PASSWORD" | cryptsetup open "$ROOT_PART" cryptroot --key-file=-
 
@@ -128,10 +124,15 @@ mount "$EFI_PART" /mnt/boot
 # -------------------------------
 #  4. Base Install
 # -------------------------------
-log "Installing Packages..."
-pacman -Sy --noconfirm reflector
+log "Updating Mirrors..."
+# FIX: Do NOT install reflector. Use the built-in one.
+# Just sync the database for the later install steps.
+pacman -Sy
+
+log "Generating optimized mirrorlist..."
 reflector --country Philippines --country Singapore --country Japan --latest 20 --sort rate --save /etc/pacman.d/mirrorlist
 
+log "Installing Packages..."
 # Core + T470 Hardware (Kaby Lake)
 PKGS=(base linux linux-firmware base-devel git rust sudo efibootmgr dosfstools btrfs-progs
       iwd bluez bluez-utils
