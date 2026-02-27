@@ -55,6 +55,13 @@ gtk-font-name=JetBrainsMono Nerd Font 11
 gtk-application-prefer-dark-theme=1
 INI
 
+echo ":: Configuring Btrfs Snapshots..."
+sudo umount /.snapshots
+sudo rm -rf /.snapshots
+sudo snapper -c root create-config /
+sudo mount -a
+sudo chmod 750 /.snapshots
+
 # Kvantum (Qt) Settings
 cat > ~/.config/Kvantum/kvantum.kvconfig <<INI
 [General]
@@ -65,6 +72,24 @@ echo ":: 5/5 Running GNU Stow..."
 # Assuming you are running this script from the root of your My-Arch-Setup repo
 echo "Stowing dotfiles..."
 stow . || echo "Stow encountered a conflict. You may need to manually resolve it."
+
+echo ":: Setting up Shell Productivity Tools..."
+cat >> ~/.bashrc <<EOF
+
+# GOAT Shell Tools
+eval "\$(zoxide init bash)"
+source /usr/share/fzf/completion.bash
+source /usr/share/fzf/key-bindings.bash
+
+# Better Git Workflow (for your CS projects)
+alias lg='lazygit'
+alias update='topgrade'
+EOF
+
+echo ":: Applying ThinkPad Thermal Fixes..."
+sudo systemctl enable --now throttled
+# Auto-tune power settings for battery life
+sudo powertop --auto-tune
 
 echo "================================================="
 echo "DONE! Setup Complete."

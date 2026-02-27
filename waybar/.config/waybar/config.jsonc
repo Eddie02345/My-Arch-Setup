@@ -1,13 +1,8 @@
-// -*- mode: jsonc -*-
 {
     "height": 30,
     "spacing": 5,
-    "modules-left": [
-        "hyprland/workspaces"
-    ],
-    "modules-center": [
-        "clock"
-    ],
+    "modules-left": ["hyprland/workspaces"],
+    "modules-center": ["clock"],
     "modules-right": [
         "tray",
         "pulseaudio",
@@ -16,67 +11,42 @@
         "custom/bluetooth",
         "battery"
     ],
+
     "hyprland/workspaces": {
-         "format": "{icon}",
-         "format-icons": {
-             "active": "",
-             "default": "",
-             "urgent": ""
-         },
-         "on-scroll-up": "hyprctl dispatch workspace e+1",
-         "on-scroll-down": "hyprctl dispatch workspace e-1"
+        "format": "{id}", // Just the number
+        "on-scroll-up": "hyprctl dispatch workspace e+1",
+        "on-scroll-down": "hyprctl dispatch workspace e-1"
     },
+
     "clock": {
-        "tooltip-format": "<tt><small>{calendar}</small></tt>",
-        "format": "{:%b %d    %H:%M}",
-        "format-alt": "{:%b %d    %H:%M}"
+        "format": "{:%b %d    %H:%M}"
     },
-    "tray": {
-        "spacing": 10
-    },
+
     "backlight": {
         "format": "{percent}% {icon}",
-        "format-icons": ["🌑", "🌘", "🌗", "🌖", "🌕"]
+        "format-icons": ["", "", "", "", "", "", "", "", ""] 
     },
+
     "battery": {
-        "states": {
-            "warning": 30,
-            "critical": 15
-        },
+        "states": { "warning": 30, "critical": 15 },
         "format": "{capacity}% {icon}",
-        "format-full": "{capacity}% {icon}",
-        "format-charging": "{capacity}% ",
+        "format-charging": "{capacity}% 󱐋",
         "format-plugged": "{capacity}% ",
-        "format-alt": "{time} {icon}",
-        "format-icons": ["", "", "", "", ""]
+        "format-icons": ["󰂎", "󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]
     },
-    "custom/bluetooth": {
-        "exec": "~/.config/waybar/scripts/bluetooth.sh",
-        "interval": 2,
-        "format": "{}",
-        "tooltip": false,
-        "on-click": "bzmenu -l rofi"
-    },
+
     "network": {
-        "format-wifi": "",
-        "format-ethernet": "",
-        "format-disconnected": "⚠",
-        "tooltip": false,
+        "format-wifi": "󰖩",
+        "format-ethernet": "󰈀",
+        "format-disconnected": "󰖪",
         "on-click": "iwmenu -l rofi"
     },
+
     "pulseaudio": {
         "format": "{volume}% {icon}",
-        "format-bluetooth": "{volume}%  {icon}",
-        "format-bluetooth-muted": "  {icon}",
-        "format-muted": "",
+        "format-muted": "󰝟",
         "format-icons": {
-            "headphone": "",
-            "hands-free": "",
-            "headset": "",
-            "phone": "",
-            "portable": "",
-            "car": "",
-            "default": ["", "", ""]
+            "default": ["󰕿", "󰖀", "󰕾"]
         },
         "on-click": "pavucontrol"
     }

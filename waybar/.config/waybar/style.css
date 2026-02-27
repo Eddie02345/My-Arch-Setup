@@ -1,11 +1,9 @@
 * {
-    /* Added Font Awesome so your icons actually load */
-    font-family: 'Cantarell', "JetBrains Mono Nerd Font", "Font Awesome 6 Free", monospace;
-    font-weight: 600; 
+    font-family: "JetBrains Mono Nerd Font", monospace;
+    font-weight: 600;  /* 700 is the typical weight for bold */
     font-size: 16px;
     border-radius: 14px;
 }
-
 #waybar {
     background-color: rgba(0, 0, 0, 0.5);
     color: #ffffff;
