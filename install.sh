@@ -1,24 +1,18 @@
 #!/bin/bash
 # =====================================================
-#  Arch Linux Installer: ThinkPad T470 (DEFINITIVE)
-#  - Hardware: i5-7300U (Kaby Lake) | HD 620
-#  - Fixes: libalpm (Paru Source), Network (DNS), Audio
-#  - ZRAM: Optimized for 8GB RAM
+#  Arch Linux Base Installer: ThinkPad T470
+#  - Hardware: i5-7300U | HD 620 | 8GB RAM (ZRAM)
+#  - Stack: LUKS2 + Btrfs + Standalone IWD/Resolved
 # =====================================================
 
 set -e
 
-# Colors
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
-
 log() { echo -e "${GREEN}[STEP] $1${NC}"; }
 err() { echo -e "${RED}[ERROR] $1${NC}"; }
 
-# -------------------------------
-#  1. User Input & Verification
-# -------------------------------
 get_verified_password() {
     local _prompt="$1"
     local -n _outvar="$2"
@@ -36,7 +30,7 @@ get_verified_password() {
 
 clear
 echo "=========================================="
-echo "   THINKPAD T470 INSTALLER (DEFINITIVE)"
+echo "   THINKPAD T470 BASE INSTALLER"
 echo "=========================================="
 lsblk -dpno NAME,SIZE,MODEL,TYPE | grep -E "disk|nvme"
 
@@ -49,12 +43,9 @@ read -rp "Enter username: " USERNAME
 
 echo "------------------------------------------"
 read -rp "Use one password for EVERYTHING (LUKS/Root/User)? (y/N): " SAME_PASS
-
 if [[ "$SAME_PASS" =~ ^[Yy]$ ]]; then
     get_verified_password "Enter Unified Password" UNIFIED_PASS
-    LUKS_PASSWORD="$UNIFIED_PASS"
-    ROOT_PASSWORD="$UNIFIED_PASS"
-    USER_PASSWORD="$UNIFIED_PASS"
+    LUKS_PASSWORD="$UNIFIED_PASS"; ROOT_PASSWORD="$UNIFIED_PASS"; USER_PASSWORD="$UNIFIED_PASS"
 else
     get_verified_password "Enter LUKS Password" LUKS_PASSWORD
     get_verified_password "Enter Root Password" ROOT_PASSWORD
@@ -65,30 +56,19 @@ echo
 read -p "!!! DESTROY DATA ON $DISK? (y/N): " CONFIRM
 [[ "$CONFIRM" == "y" ]] || exit 1
 
-# -------------------------------
-#  2. Pre-Flight Cleanup (Force Unlock)
-# -------------------------------
 log "Forcing cleanup of locks..."
-swapoff -a || true
-umount -R /mnt || true
-cryptsetup close cryptroot || true
-udevadm settle
-sleep 1
+swapoff -a || true; umount -R /mnt || true; cryptsetup close cryptroot || true; udevadm settle; sleep 1
 
-# -------------------------------
-#  3. Partitioning & Encryption
-# -------------------------------
 [[ "$DISK" =~ "nvme" || "$DISK" =~ "mmcblk" ]] && P="p" || P=""
 EFI_PART="${DISK}${P}1"
 ROOT_PART="${DISK}${P}2"
 
-log "Wiping disk..."
+log "Wiping disk & Partitioning..."
 wipefs --all --force "$DISK"
 sgdisk -Z "$DISK"
 sgdisk -n 1:0:+1G -t 1:ef00 -c 1:"EFI" "$DISK"
 sgdisk -n 2:0:0   -t 2:8300 -c 2:"LUKS" "$DISK"
-partprobe "$DISK"
-udevadm settle && sleep 2
+partprobe "$DISK"; udevadm settle && sleep 2
 
 log "Encrypting Root..."
 echo -n "$LUKS_PASSWORD" | cryptsetup luksFormat "$ROOT_PART" --type luks2 --batch-mode --key-file=-
@@ -109,30 +89,22 @@ mkdir -p /mnt/{home,var/log,.snapshots,boot}
 mount -o "$MOUNT_OPT,subvol=@home" /dev/mapper/cryptroot /mnt/home
 mount -o "$MOUNT_OPT,subvol=@snapshots" /dev/mapper/cryptroot /mnt/.snapshots
 mount -o "$MOUNT_OPT,subvol=@var_log" /dev/mapper/cryptroot /mnt/var/log
-
 mkfs.fat -F32 -n "EFI" "$EFI_PART"
 mount "$EFI_PART" /mnt/boot
 
-# -------------------------------
-#  4. Base Install
-# -------------------------------
 log "Setting up Mirrors..."
 cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak
-# Use built-in Reflector SAFELY (no update, no install)
 if command -v reflector &> /dev/null; then
-    log "Using Reflector..."
-    reflector --country Philippines --country Singapore --country Japan --latest 10 --sort rate --save /etc/pacman.d/mirrorlist || echo "Reflector failed, using fallback."
+    reflector --country Philippines --country Singapore --country Japan --latest 10 --sort rate --save /etc/pacman.d/mirrorlist || true
 fi
-# Fallback mirror just in case
 echo "Server = https://geo.mirror.pkgbuild.com/\$repo/os/\$arch" >> /etc/pacman.d/mirrorlist
 
 log "Syncing databases..."
 pacman -Sy
 
 log "Installing Packages..."
-# Note: reflector added to final system for future use
 PKGS=(base linux linux-firmware base-devel git rust sudo efibootmgr dosfstools btrfs-progs
-      iwd bluez bluez-utils reflector
+      iwd bluez bluez-utils reflector stow
       intel-ucode mesa vulkan-intel intel-media-driver libva-utils
       sof-firmware acpi_call tlp acpid
       hyprland xdg-desktop-portal-hyprland hyprpaper waybar swaync
@@ -140,19 +112,14 @@ PKGS=(base linux linux-firmware base-devel git rust sudo efibootmgr dosfstools b
       sddm qt5-wayland qt6-wayland qt5ct qt6ct kvantum
       alacritty nemo ttf-jetbrains-mono-nerd brightnessctl papirus-icon-theme
       zram-generator man-db fuzzel cliphist polkit-gnome)
-
 pacstrap /mnt "${PKGS[@]}"
 
-# -------------------------------
-#  5. System Configuration
-# -------------------------------
+log "Configuring System..."
 genfstab -U /mnt >> /mnt/etc/fstab
 UUID=$(blkid -s UUID -o value "$ROOT_PART")
 
 arch-chroot /mnt /bin/bash <<EOF
 set -e
-
-# Time & Locale
 ln -sf /usr/share/zoneinfo/Asia/Manila /etc/localtime
 hwclock --systohc
 echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
@@ -160,16 +127,13 @@ locale-gen
 echo "LANG=en_US.UTF-8" > /etc/locale.conf
 echo "$HOSTNAME" > /etc/hostname
 
-# Users
 echo "root:$ROOT_PASSWORD" | chpasswd
 useradd -m -G wheel,video,input -s /bin/bash "$USERNAME"
 echo "$USERNAME:$USER_PASSWORD" | chpasswd
 echo "%wheel ALL=(ALL) ALL" > /etc/sudoers.d/wheel
 chmod 0440 /etc/sudoers.d/wheel
 
-# Network & DNS Fix (Systemd-Resolved)
 mkdir -p /etc/iwd
-# Configure IWD to use systemd-resolved for DNS
 cat > /etc/iwd/main.conf <<INI
 [General]
 EnableNetworkConfiguration=true
@@ -177,25 +141,23 @@ EnableNetworkConfiguration=true
 NameResolvingService=systemd
 INI
 
-# ZRAM (8GB Optimized)
 cat > /etc/systemd/zram-generator.conf <<INI
 [zram0]
 zram-size = min(ram, 8192)
 compression-algorithm = zstd
 INI
+
 cat > /etc/sysctl.d/99-zram.conf <<INI
 vm.swappiness = 100
 vm.page-cluster = 0
 INI
 
-# Environment (VA-API & Theming)
 cat >> /etc/environment <<ENV
 LIBVA_DRIVER_NAME=iHD
 QT_QPA_PLATFORMTHEME=qt5ct
 QT_STYLE_OVERRIDE=kvantum
 ENV
 
-# Bootloader (GRUB + LUKS + Kaby Lake GuC)
 pacman -S --noconfirm grub
 sed -i 's/^HOOKS=.*/HOOKS=(base udev autodetect modconf keyboard keymap block encrypt filesystems btrfs fsck)/' /etc/mkinitcpio.conf
 mkinitcpio -P
@@ -203,69 +165,10 @@ sed -i "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=$UUID:cry
 grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Arch
 grub-mkconfig -o /boot/grub/grub.cfg
 
-# Services
-systemctl enable iwd
-systemctl enable systemd-resolved
-systemctl enable bluetooth
-systemctl enable tlp
-systemctl enable sddm
-systemctl enable fstrim.timer
-
-# -------------------------------
-#  6. Create Post-Install Script
-# -------------------------------
-cat > /home/$USERNAME/finish_setup.sh <<POSTINSTALL
-#!/bin/bash
-set -e
-
-echo ":: 1/3 Compiling Paru from Source..."
-echo "   (This fixes the libalpm error. It will take ~10 mins.)"
-rm -rf paru
-git clone https://aur.archlinux.org/paru.git
-cd paru
-makepkg -si --noconfirm
-cd ..
-rm -rf paru
-
-echo ":: 2/3 Installing Catppuccin Themes..."
-# We use the main package to avoid "target not found" errors
-paru -S --noconfirm catppuccin-gtk-theme catppuccin-kvantum
-
-echo ":: 3/3 Configuring Visuals (Mocha)..."
-mkdir -p ~/.config/{gtk-3.0,gtk-4.0,Kvantum,qt5ct}
-
-# GTK Settings
-cat > ~/.config/gtk-3.0/settings.ini <<INI
-[Settings]
-gtk-theme-name=Catppuccin-Mocha-Standard-Blue-Dark
-gtk-icon-theme-name=Papirus-Dark
-gtk-font-name=JetBrainsMono Nerd Font 11
-gtk-application-prefer-dark-theme=1
-INI
-
-cat > ~/.config/gtk-4.0/settings.ini <<INI
-[Settings]
-gtk-theme-name=Catppuccin-Mocha-Standard-Blue-Dark
-gtk-icon-theme-name=Papirus-Dark
-gtk-font-name=JetBrainsMono Nerd Font 11
-gtk-application-prefer-dark-theme=1
-INI
-
-# Kvantum (Qt) Settings
-cat > ~/.config/Kvantum/kvantum.kvconfig <<INI
-[General]
-theme=Catppuccin-Mocha-Blue
-INI
-
-echo "DONE! Setup Complete."
-echo "You can now reboot or launch Hyprland."
-POSTINSTALL
-
-# Make executable & Fix permissions
-chmod +x /home/$USERNAME/finish_setup.sh
-chown $USERNAME:$USERNAME /home/$USERNAME/finish_setup.sh
-
+systemctl enable iwd systemd-resolved bluetooth tlp sddm fstrim.timer
 EOF
 
-log "Installation Complete! Unplug USB and Reboot."
-log "Login, then run: ./finish_setup.sh"
+log "Base Installation Complete!"
+echo "1. Type 'reboot' and remove your USB."
+echo "2. Log in to your new system."
+echo "3. Run: git clone <your-repo-url> && cd <repo> && ./post-install.sh"
