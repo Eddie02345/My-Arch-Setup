@@ -167,7 +167,6 @@ grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Arch
 grub-mkconfig -o /boot/grub/grub.cfg
 
 systemctl enable iwd systemd-resolved bluetooth tlp sddm fstrim.timer
-systemctl enable lenovo_fix.service 
 systemctl enable throttled.service
 systemctl enable snapper-timeline.timer
 systemctl enable snapper-cleanup.timer
