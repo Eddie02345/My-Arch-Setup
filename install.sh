@@ -110,7 +110,7 @@ PKGS=(base linux linux-firmware base-devel git rust sudo efibootmgr dosfstools b
       hyprland xdg-desktop-portal-hyprland hyprpaper waybar swaync
       pipewire pipewire-pulse wireplumber
       sddm qt5-wayland qt6-wayland qt5ct qt6ct kvantum
-      alacritty nemo ttf-jetbrains-mono-nerd brightnessctl papirus-icon-theme
+      alacritty nemo kitty nvim ttf-jetbrains-mono-nerd brightnessctl papirus-icon-theme
       zram-generator man-db fuzzel cliphist polkit-gnome cantarell-fonts ttf-jetbrains-mono-nerd ttf-font-awesome
       throttled lazygit fastfetch fzf zoxide nwg-look grim slurp swappy fwupd snapper snap-pac)
 pacstrap /mnt "${PKGS[@]}"
