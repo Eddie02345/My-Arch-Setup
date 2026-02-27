@@ -33,10 +33,12 @@ else
 fi
 
 echo ":: 3/4 Installing Catppuccin Themes..."
-paru -S --noconfirm catppuccin-gtk-theme catppuccin-kvantum
+paru -S --noconfirm catppuccin-gtk-theme catppuccin-kvantum 
 
 echo ":: 4/4 Configuring Visuals (Mocha)..."
 mkdir -p ~/.config/{gtk-3.0,gtk-4.0,Kvantum,qt5ct}
+
+paru -S topgrade
 
 # GTK Settings
 cat > ~/.config/gtk-3.0/settings.ini <<INI

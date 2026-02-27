@@ -112,7 +112,7 @@ PKGS=(base linux linux-firmware base-devel git rust sudo efibootmgr dosfstools b
       sddm qt5-wayland qt6-wayland qt5ct qt6ct kvantum
       alacritty nemo ttf-jetbrains-mono-nerd brightnessctl papirus-icon-theme
       zram-generator man-db fuzzel cliphist polkit-gnome cantarell-fonts ttf-jetbrains-mono-nerd ttf-font-awesome
-      topgrade throttled lazygit fastfetch fzf zoxide nwg-look grim slurp swappy fwupd snapper snap-pac)
+      throttled lazygit fastfetch fzf zoxide nwg-look grim slurp swappy fwupd snapper snap-pac)
 pacstrap /mnt "${PKGS[@]}"
 
 log "Configuring System..."
