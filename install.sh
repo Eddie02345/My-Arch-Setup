@@ -111,7 +111,7 @@ PKGS=(base linux linux-firmware base-devel git rust sudo efibootmgr dosfstools b
       pipewire pipewire-pulse wireplumber
       sddm qt5-wayland qt6-wayland qt5ct qt6ct kvantum
       alacritty nemo ttf-jetbrains-mono-nerd brightnessctl papirus-icon-theme
-      zram-generator man-db fuzzel cliphist polkit-gnome)
+      zram-generator man-db fuzzel cliphist polkit-gnome cantarell-fonts ttf-jetbrains-mono-nerd ttf-font-awesome)
 pacstrap /mnt "${PKGS[@]}"
 
 log "Configuring System..."
