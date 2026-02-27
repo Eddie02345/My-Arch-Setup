@@ -91,6 +91,17 @@ sudo systemctl enable --now throttled
 # Auto-tune power settings for battery life
 sudo powertop --auto-tune
 
+echo ":: Protecting Dual Battery Health..."
+# BAT0 is usually the internal, BAT1 is the removable
+sudo tlp setthreshold 75 80 BAT0
+sudo tlp setthreshold 75 80 BAT1
+
+# Make it permanent in the config
+sudo sed -i 's/#START_CHARGE_THRESH_BAT0=75/START_CHARGE_THRESH_BAT0=75/' /etc/tlp.conf
+sudo sed -i 's/#STOP_CHARGE_THRESH_BAT0=80/STOP_CHARGE_THRESH_BAT0=80/' /etc/tlp.conf
+sudo sed -i 's/#START_CHARGE_THRESH_BAT1=75/START_CHARGE_THRESH_BAT1=75/' /etc/tlp.conf
+sudo sed -i 's/#STOP_CHARGE_THRESH_BAT1=80/STOP_CHARGE_THRESH_BAT1=80/' /etc/tlp.conf
+
 echo "================================================="
 echo "DONE! Setup Complete."
 echo "Reboot or restart Hyprland to apply the themes."
