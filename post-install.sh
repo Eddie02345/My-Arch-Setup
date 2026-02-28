@@ -32,7 +32,7 @@ fi
 
 echo ":: 3/5 Installing AUR Packages & Themes..."
 # Added throttled, topgrade, nwg-look, and proper Catppuccin AUR theme packages
-paru -S --noconfirm topgrade throttled nwg-look-bin catppuccin-gtk-theme-mocha catppuccin-kvantum-theme-mocha
+paru -S --noconfirm topgrade throttled kvantum-theme-catppuccin-git catppuccin-gtk-theme-mocha
 
 echo ":: 4/5 Configuring Visuals (Mocha)..."
 mkdir -p ~/.config/{gtk-3.0,gtk-4.0,Kvantum,qt5ct}
