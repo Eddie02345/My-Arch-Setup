@@ -82,15 +82,10 @@ echo ":: 5/5 Running GNU Stow..."
 # Clear out any default configs that Hyprland/Waybar created so stow doesn't conflict
 rm -rf ~/.config/hypr ~/.config/waybar 2>/dev/null
 
-# Make sure we are in the repo directory (Change this path if your repo name is different)
-if [ -d "$HOME/git-files/My-Arch-Setup" ]; then
-    cd ~/git-files/My-Arch-Setup
-    echo "Stowing hyprland and waybar..."
-    stow -t ~ hypr
-    stow -t ~ waybar
-else
-    echo "WARNING: Could not find ~/git-files/My-Arch-Setup. Please stow manually."
-fi
+echo "Stowing hyprland and waybar..."
+stow -t ~ hypr
+stow -t ~ waybar
+
 
 echo ":: Setting up Shell Productivity Tools..."
 cat >> ~/.bashrc <<EOF
@@ -107,7 +102,6 @@ EOF
 
 echo ":: Applying ThinkPad Thermal Fixes..."
 sudo systemctl enable --now throttled.service
-sudo powertop --auto-tune
 
 echo ":: Protecting Dual Battery Health..."
 sudo tlp setthreshold 75 80 BAT0
