@@ -103,16 +103,18 @@ log "Syncing databases..."
 pacman -Sy
 
 log "Installing Packages..."
+# NOTE: Removed AUR packages (throttled, nwg-look) from this list so pacstrap doesn't fail.
+# Added 'dconf' which is mandatory for GTK themes to save.
 PKGS=(base linux linux-firmware base-devel git rust sudo efibootmgr dosfstools btrfs-progs
       iwd bluez bluez-utils reflector stow
       intel-ucode mesa vulkan-intel intel-media-driver libva-utils
       sof-firmware acpi_call tlp acpid
       hyprland xdg-desktop-portal-hyprland hyprpaper waybar swaync
       pipewire pipewire-pulse wireplumber
-      sddm qt5-wayland qt6-wayland qt5ct qt6ct kvantum
-      alacritty nemo kitty nvim ttf-jetbrains-mono-nerd brightnessctl papirus-icon-theme
+      sddm qt5-wayland qt6-wayland qt5ct qt6ct kvantum dconf
+      alacritty nemo kitty nvim brightnessctl papirus-icon-theme
       zram-generator man-db fuzzel cliphist polkit-gnome cantarell-fonts ttf-jetbrains-mono-nerd ttf-font-awesome
-      throttled lazygit fastfetch fzf zoxide nwg-look grim slurp swappy fwupd snapper snap-pac)
+      lazygit fastfetch fzf zoxide grim slurp swappy fwupd snapper snap-pac)
 pacstrap /mnt "${PKGS[@]}"
 
 log "Configuring System..."
@@ -167,7 +169,6 @@ grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Arch
 grub-mkconfig -o /boot/grub/grub.cfg
 
 systemctl enable iwd systemd-resolved bluetooth tlp sddm fstrim.timer
-systemctl enable throttled.service
 systemctl enable snapper-timeline.timer
 systemctl enable snapper-cleanup.timer
 EOF
