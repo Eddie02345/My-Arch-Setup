@@ -30,20 +30,20 @@ else
     echo "Paru is already installed. Skipping."
 fi
 
-echo ":: 3/5 Installing AUR Packages & Themes..."
-# Added throttled, topgrade, nwg-look, and proper Catppuccin AUR theme packages
-paru -S --noconfirm topgrade throttled kvantum-theme-catppuccin-git catppuccin-gtk-theme-mocha
+echo ":: 3/5 Installing AUR Packages & GTK Theme..."
+# Removed nwg-look-bin (install 'nwg-look' via pacman in install.sh instead)
+# Removed broken Kvantum AUR packages
+paru -S --noconfirm topgrade throttled catppuccin-gtk-theme-mocha
 
 echo ":: 4/5 Configuring Visuals (Mocha)..."
 mkdir -p ~/.config/{gtk-3.0,gtk-4.0,Kvantum,qt5ct}
 
-# Apply using gsettings (Crucial for Wayland/Hyprland)
+# --- Apply GTK Settings ---
 gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
 gsettings set org.gnome.desktop.interface gtk-theme 'Catppuccin-Mocha-Standard-Blue-Dark'
 gsettings set org.gnome.desktop.interface icon-theme 'Papirus-Dark'
 gsettings set org.gnome.desktop.interface font-name 'JetBrainsMono Nerd Font 11'
 
-# Fallback for older GTK3/GTK4 apps
 cat > ~/.config/gtk-3.0/settings.ini <<INI
 [Settings]
 gtk-theme-name=Catppuccin-Mocha-Standard-Blue-Dark
@@ -60,10 +60,15 @@ gtk-font-name=JetBrainsMono Nerd Font 11
 gtk-application-prefer-dark-theme=1
 INI
 
-# Kvantum (Qt) Settings
+# --- Install & Apply Kvantum (QT) Theme via GitHub ---
+echo ":: Cloning Kvantum Mocha Theme directly from source..."
+git clone https://github.com/catppuccin/Kvantum.git /tmp/catppuccin-kvantum
+cp -r /tmp/catppuccin-kvantum/themes/catppuccin-mocha-blue ~/.config/Kvantum/
+rm -rf /tmp/catppuccin-kvantum
+
 cat > ~/.config/Kvantum/kvantum.kvconfig <<INI
 [General]
-theme=Catppuccin-Mocha-Blue
+theme=catppuccin-mocha-blue
 INI
 
 echo ":: Configuring Btrfs Snapshots..."
