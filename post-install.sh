@@ -6,21 +6,19 @@
 
 set -e
 
-# Prevent running as root (makepkg will fail if run as root)
+# Prevent running as root
 if [ "$EUID" -eq 0 ]; then
   echo "Please do not run this script as root. Run it as your normal user."
   exit 1
 fi
 
-echo ":: 1/4 Ensuring Network & DNS..."
-# Quick test to make sure systemd-resolved is working
+echo ":: 1/5 Ensuring Network & DNS..."
 if ! ping -c 1 archlinux.org &> /dev/null; then
     echo "Network not reachable. Forcing DNS fallback..."
     echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf > /dev/null
 fi
 
-echo ":: 2/4 Compiling Paru from Source..."
-# We compile from source to avoid libalpm mismatched versions
+echo ":: 2/5 Compiling Paru from Source..."
 if ! command -v paru &> /dev/null; then
     rm -rf ~/paru
     git clone https://aur.archlinux.org/paru.git ~/paru
@@ -32,15 +30,20 @@ else
     echo "Paru is already installed. Skipping."
 fi
 
-echo ":: 3/4 Installing Catppuccin Themes..."
-paru -S --noconfirm catppuccin-gtk-theme catppuccin-kvantum 
+echo ":: 3/5 Installing AUR Packages & Themes..."
+# Added throttled, topgrade, nwg-look, and proper Catppuccin AUR theme packages
+paru -S --noconfirm topgrade throttled nwg-look-bin catppuccin-gtk-theme-mocha catppuccin-kvantum-theme-mocha
 
-echo ":: 4/4 Configuring Visuals (Mocha)..."
+echo ":: 4/5 Configuring Visuals (Mocha)..."
 mkdir -p ~/.config/{gtk-3.0,gtk-4.0,Kvantum,qt5ct}
 
-paru -S topgrade
+# Apply using gsettings (Crucial for Wayland/Hyprland)
+gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
+gsettings set org.gnome.desktop.interface gtk-theme 'Catppuccin-Mocha-Standard-Blue-Dark'
+gsettings set org.gnome.desktop.interface icon-theme 'Papirus-Dark'
+gsettings set org.gnome.desktop.interface font-name 'JetBrainsMono Nerd Font 11'
 
-# GTK Settings
+# Fallback for older GTK3/GTK4 apps
 cat > ~/.config/gtk-3.0/settings.ini <<INI
 [Settings]
 gtk-theme-name=Catppuccin-Mocha-Standard-Blue-Dark
@@ -57,31 +60,40 @@ gtk-font-name=JetBrainsMono Nerd Font 11
 gtk-application-prefer-dark-theme=1
 INI
 
-echo ":: Configuring Btrfs Snapshots..."
-sudo umount /.snapshots
-sudo rm -rf /.snapshots
-sudo snapper -c root create-config /
-sudo mount -a
-sudo chmod 750 /.snapshots
-
 # Kvantum (Qt) Settings
 cat > ~/.config/Kvantum/kvantum.kvconfig <<INI
 [General]
 theme=Catppuccin-Mocha-Blue
 INI
 
+echo ":: Configuring Btrfs Snapshots..."
+sudo umount /.snapshots || true
+sudo rm -rf /.snapshots
+sudo snapper -c root create-config /
+sudo mount -a
+sudo chmod 750 /.snapshots
+
 echo ":: 5/5 Running GNU Stow..."
-# Assuming you are running this script from the root of your My-Arch-Setup repo
-echo "Stowing dotfiles..."
-stow . || echo "Stow encountered a conflict. You may need to manually resolve it."
+# Clear out any default configs that Hyprland/Waybar created so stow doesn't conflict
+rm -rf ~/.config/hypr ~/.config/waybar 2>/dev/null
+
+# Make sure we are in the repo directory (Change this path if your repo name is different)
+if [ -d "$HOME/git-files/My-Arch-Setup" ]; then
+    cd ~/git-files/My-Arch-Setup
+    echo "Stowing hyprland and waybar..."
+    stow -t ~ hypr
+    stow -t ~ waybar
+else
+    echo "WARNING: Could not find ~/git-files/My-Arch-Setup. Please stow manually."
+fi
 
 echo ":: Setting up Shell Productivity Tools..."
 cat >> ~/.bashrc <<EOF
 
 # GOAT Shell Tools
 eval "\$(zoxide init bash)"
-source /usr/share/fzf/completion.bash
-source /usr/share/fzf/key-bindings.bash
+source /usr/share/fzf/completion.bash 2>/dev/null
+source /usr/share/fzf/key-bindings.bash 2>/dev/null
 
 # Better Git Workflow (for your CS projects)
 alias lg='lazygit'
@@ -89,16 +101,13 @@ alias update='topgrade'
 EOF
 
 echo ":: Applying ThinkPad Thermal Fixes..."
-sudo systemctl enable --now throttled
-# Auto-tune power settings for battery life
+sudo systemctl enable --now throttled.service
 sudo powertop --auto-tune
 
 echo ":: Protecting Dual Battery Health..."
-# BAT0 is usually the internal, BAT1 is the removable
 sudo tlp setthreshold 75 80 BAT0
 sudo tlp setthreshold 75 80 BAT1
 
-# Make it permanent in the config
 sudo sed -i 's/#START_CHARGE_THRESH_BAT0=75/START_CHARGE_THRESH_BAT0=75/' /etc/tlp.conf
 sudo sed -i 's/#STOP_CHARGE_THRESH_BAT0=80/STOP_CHARGE_THRESH_BAT0=80/' /etc/tlp.conf
 sudo sed -i 's/#START_CHARGE_THRESH_BAT1=75/START_CHARGE_THRESH_BAT1=75/' /etc/tlp.conf
