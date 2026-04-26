@@ -399,8 +399,11 @@ else
     grub-mkconfig -o /boot/grub/grub.cfg
 fi
 
-# ── Snapper (auto-configure root subvolume) ──────────────────
-snapper -c root create-config /
+# ── Snapper ──────────────────────────────────────────────────
+# NOTE: 'snapper create-config' requires a live D-Bus session and
+# CANNOT run inside a chroot. The timers are enabled here so they
+# are ready to fire, but the actual config is created by post-install.sh
+# on first boot (Step 4), which runs on the live system.
 
 # ── Enable systemd services ──────────────────────────────────
 systemctl enable $ALL_SERVICES
