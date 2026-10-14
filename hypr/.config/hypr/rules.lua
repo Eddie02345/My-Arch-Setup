@@ -1,0 +1,15 @@
+-- =====================================================
+--  Window & Workspace Rules
+-- =====================================================
+--
+-- The old hyprland.conf defined no windowrule / workspace rule here.
+-- It had an empty section header, kept below as a reminder.
+
+-- TODO(virt-manager): "Virt Manager Workspace Switching Fix" was an empty
+-- section in the old config — the rule itself was never written. Add it here
+-- once the intended behaviour is known, e.g.:
+--   hl.window_rule({
+--       name  = "virt-manager-workspace",
+--       match = { class = "^virt-manager$" },
+--       workspace = "2 silent",
+--   })
