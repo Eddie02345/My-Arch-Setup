@@ -1,0 +1,14 @@
+android-studio
+bottles
+bzmenu-bin
+catppuccin-gtk-theme-mocha
+iwmenu-bin
+jpdfbookmarks
+packettracer
+paru
+r-quick-share-bin
+topgrade
+ttf-ms-fonts
+visual-studio-code-bin
+wlogout
+zen-browser-bin

@@ -6,8 +6,9 @@
 monitor = , preferred, auto, 1
 
 # --- AUTOSTART ---
-exec-once = waybar & hyprpaper & swaync
+exec-once = waybar & swaync
 exec-once = /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
+exec-once = hyprpaper -c /home/Eddie/.config/hypr/hyprpaper.conf
 
 # --- ENVIRONMENT VARIABLES (Catppuccin & Wayland) ---
 env = env = GTK_THEME,catppuccin-mocha-blue-standard+default
@@ -19,6 +20,7 @@ env = XDG_CURRENT_DESKTOP,Hyprland
 env = XDG_SESSION_TYPE,wayland
 env = XDG_SESSION_DESKTOP,Hyprland
 env = LIBVA_DRIVER_NAME,iHD
+env = XDG_DATA_DIRS,$HOME/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:$XDG_DATA_DIRS
 
 # --- INPUT & TOUCHPAD ---
 input {
@@ -31,6 +33,8 @@ input {
         disable_while_typing = true
     }
 }
+
+# --- Virt Manager Workspace Switching Fix ---
 
 # --- GENERAL VISUALS ---
 general {
@@ -67,7 +71,6 @@ animations {
 }
 
 dwindle {
-    pseudotile = true
     preserve_split = true
 }
 
@@ -79,6 +82,10 @@ misc {
 # --- KEYBINDINGS ---
 $mainMod = SUPER
 
+
+#GTK theming
+exec-once = gsettings set org.gnome.desktop.interface gtk-theme 'catppuccin-mocha-mauve-standard+default'
+exec-once = gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
 
 
 # Screenshots (Grim + Slurp + Swappy)

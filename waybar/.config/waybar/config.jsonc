@@ -8,12 +8,13 @@
         "pulseaudio",
         "backlight",
         "network",
-        "custom/bluetooth",
-        "battery"
+        "bluetooth",
+        "battery",
+	"custom/power"
     ],
 
     "hyprland/workspaces": {
-        "format": "{id}", // Just the number
+        "format": "{id}", 
         "on-scroll-up": "hyprctl dispatch workspace e+1",
         "on-scroll-down": "hyprctl dispatch workspace e-1"
     },
@@ -36,12 +37,15 @@
     },
 
     "network": {
-        "format-wifi": "󰖩",
-        "format-ethernet": "󰈀",
-        "format-disconnected": "󰖪",
-        "on-click": "iwmenu -l rofi"
-    },
-
+    "format-wifi": "󰖩",
+    "format-ethernet": "󰈀",
+    "format-disconnected": "󰖪",
+    "tooltip-format": "{ifname} via {gwaddr}",
+    "tooltip-format-wifi": "{essid} ({signalStrength}%)",
+    "tooltip-format-ethernet": "{ifname} ",
+    "tooltip-format-disconnected": "Disconnected",
+    "on-click": "iwmenu -l fuzzel"
+},
     "pulseaudio": {
         "format": "{volume}% {icon}",
         "format-muted": "󰝟",
@@ -49,5 +53,25 @@
             "default": ["󰕿", "󰖀", "󰕾"]
         },
         "on-click": "pavucontrol"
-    }
+    },
+
+   "bluetooth": {
+    "format": "󰂯",
+    "format-disabled": "󰂲",
+    "format-off": "󰂲",      
+    "format-connected": "󰂱 {device_alias}",
+    "format-connected-battery": "󰂱 {device_alias} {device_battery_percentage}%",
+    "tooltip-format": "{controller_alias}\t{controller_address}\n\n{num_connections} connected",
+    "tooltip-format-connected": "{controller_alias}\t{controller_address}\n\n{num_connections} connected\n\n{device_enumerate}",
+    "tooltip-format-enumerate-connected": "{device_alias}\t{device_address}",
+    "tooltip-format-enumerate-connected-battery": "{device_alias}\t{device_address}\t{device_battery_percentage}%",
+    "on-click": "bzmenu -l fuzzel"
+},
+    "custom/power": {
+    "format": "⏻ ",
+    "tooltip": false,
+    "on-click": "wlogout"
+	}
 }
+
+

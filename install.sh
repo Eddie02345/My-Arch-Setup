@@ -16,6 +16,28 @@ warn() { echo -e "${YELLOW}[WARN]  $*${NC}"; }
 err()  { echo -e "${RED}[ERR]   $*${NC}" >&2; exit 1; }
 hr()   { echo -e "${BOLD}────────────────────────────────────────────────${NC}"; }
 
+# ── Options ──────────────────────────────────────────────────────
+# --dry-run walks the whole questionnaire and prints the plan, then stops
+# before anything is partitioned, formatted, encrypted or written.
+DRY_RUN=0
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run|-n) DRY_RUN=1 ;;
+        --help|-h)
+            cat <<'USAGE'
+install.sh [--dry-run]
+
+  -n, --dry-run   Walk the questionnaire and print the plan, change nothing.
+  -h, --help      Show this text.
+
+This script wipes the target disk. There is no other safe way to test it.
+USAGE
+            exit 0 ;;
+        *) err "Unknown option: '$arg' (try --help)" ;;
+    esac
+done
+(( DRY_RUN )) && warn "DRY RUN — nothing will be written to disk."
+
 # ── Password Helper ──────────────────────────────────────────────
 get_verified_password() {
     local prompt="$1"
@@ -166,15 +188,60 @@ read -rp "Select [1-2] (default 1): " _bl; _bl="${_bl:-1}"
 
 # ── 5. Passwords ────────────────────────────────────────────────
 hr; echo -e "${BOLD} 5. Passwords${NC}"; hr
-read -rp "Use a single password for LUKS + root + $USERNAME? (y/N): " _sp
-if [[ "$_sp" =~ ^[Yy]$ ]]; then
-    get_verified_password "Unified Password" _UP
-    LUKS_PASS="$_UP"; ROOT_PASS="$_UP"; USER_PASS="$_UP"
+if (( DRY_RUN )); then
+    info "Dry run — skipping password prompts."
+    LUKS_PASS=""; ROOT_PASS=""; USER_PASS=""
 else
-    get_verified_password "LUKS Encryption Password"  LUKS_PASS
-    get_verified_password "Root Password"              ROOT_PASS
-    get_verified_password "Password for $USERNAME"     USER_PASS
+    read -rp "Use a single password for LUKS + root + $USERNAME? (y/N): " _sp
+    if [[ "$_sp" =~ ^[Yy]$ ]]; then
+        get_verified_password "Unified Password" _UP
+        LUKS_PASS="$_UP"; ROOT_PASS="$_UP"; USER_PASS="$_UP"
+    else
+        get_verified_password "LUKS Encryption Password"  LUKS_PASS
+        get_verified_password "Root Password"              ROOT_PASS
+        get_verified_password "Password for $USERNAME"     USER_PASS
+    fi
 fi
+
+# ── Layout constants ────────────────────────────────────────────
+# Shared by the dry-run plan below and the real run further down.
+BTRFS_SUBVOLS=(@ @home @snapshots @var_log @var_cache_pacman)
+MOPT="noatime,compress=zstd:3,space_cache=v2,discard=async"
+
+# Core packages — profile-independent. Assembled here so that --dry-run
+# can report the final list without duplicating it.
+BASE_PKGS=(
+    # Base system
+    base linux linux-firmware base-devel git rust sudo
+    efibootmgr dosfstools btrfs-progs
+    # Network
+    iwd bluez bluez-utils reflector
+    # Wayland / Hyprland
+    hyprland xdg-desktop-portal-hyprland hyprpaper waybar swaync
+    # Audio (PipeWire)
+    pipewire pipewire-pulse wireplumber
+    # Display manager & Qt theming
+    sddm qt5-wayland qt6-wayland qt5ct qt6ct kvantum dconf
+    # GUI apps & tools
+    alacritty kitty neovim nemo brightnessctl stow
+    papirus-icon-theme cantarell-fonts ttf-jetbrains-mono-nerd ttf-font-awesome
+    fuzzel cliphist polkit-gnome
+    lazygit fastfetch fzf zoxide
+    grim slurp swappy
+    # System utilities
+    zram-generator man-db acpid fwupd
+    snapper snap-pac
+)
+
+# Add GRUB if selected as bootloader
+[[ "$BOOTLOADER" == "grub" ]] && BASE_PKGS+=(grub)
+
+# Assemble final list: base + microcode + GPU + profile extras
+ALL_PKGS=("${BASE_PKGS[@]}" "$MICROCODE" "${GPU_PKGS[@]}" "${EXTRA_PKGS[@]}")
+
+# systemd services, built dynamically from the profile
+ALL_SERVICES="iwd systemd-resolved bluetooth acpid sddm fstrim.timer snapper-timeline.timer snapper-cleanup.timer"
+[[ -n "$SVC_EXTRA" ]] && ALL_SERVICES="$ALL_SERVICES $SVC_EXTRA"
 
 # ── 6. Final Confirmation ───────────────────────────────────────
 hr; echo -e "${BOLD} Summary${NC}"; hr
@@ -189,6 +256,22 @@ printf "  %-18s %s\n" "Microcode:"  "$MICROCODE"
 printf "  %-18s %s\n" "GPU Pkgs:"   "${GPU_PKGS[*]}"
 [[ -n "$SVC_EXTRA" ]] && printf "  %-18s %s\n" "Extra Services:" "$SVC_EXTRA"
 hr
+if (( DRY_RUN )); then
+    echo -e "${BOLD}  Plan — none of this will actually run${NC}"
+    hr
+    printf "  %-18s %s\n" "Partitions:"    "1G EFI (ef00) + remainder LUKS2 (8300) on ${DISK}"
+    printf "  %-18s %s\n" "Filesystem:"    "Btrfs on /dev/mapper/cryptroot"
+    printf "  %-18s %s\n" "Subvolumes:"    "${BTRFS_SUBVOLS[*]}"
+    printf "  %-18s %s\n" "Mount options:" "$MOPT"
+    printf "  %-18s %s\n" "Packages:"      "${#ALL_PKGS[@]} via pacstrap"
+    printf "  %-18s %s\n" "Bootloader:"    "$BOOTLOADER"
+    printf "  %-18s %s\n" "Services:"      "$ALL_SERVICES"
+    [[ -n "$KERNEL_PARAMS" ]] && printf "  %-18s %s\n" "Kernel params:" "$KERNEL_PARAMS"
+    hr
+    info "Dry run complete — ${DISK} and the running system are untouched."
+    info "Re-run without --dry-run to install for real."
+    exit 0
+fi
 echo -e "${RED}  ALL DATA ON $DISK WILL BE PERMANENTLY DESTROYED.${NC}"
 read -rp "  Type 'yes' to continue: " _confirm
 [[ "$_confirm" == "yes" ]] || { info "Aborted."; exit 0; }
@@ -223,13 +306,12 @@ echo -n "$LUKS_PASS" | cryptsetup open "$ROOT_PART" cryptroot --key-file=-
 log "Creating Btrfs filesystem and subvolumes..."
 mkfs.btrfs -f -L "ARCH_ROOT" /dev/mapper/cryptroot
 mount /dev/mapper/cryptroot /mnt
-for sv in @ @home @snapshots @var_log @var_cache_pacman; do
+for sv in "${BTRFS_SUBVOLS[@]}"; do
     btrfs subvolume create "/mnt/$sv"
 done
 umount /mnt
 
 log "Mounting subvolumes..."
-MOPT="noatime,compress=zstd:3,space_cache=v2,discard=async"
 mount -o "$MOPT,subvol=@"                /dev/mapper/cryptroot /mnt
 mkdir -p /mnt/{home,var/log,var/cache/pacman/pkg,.snapshots,boot}
 mount -o "$MOPT,subvol=@home"            /dev/mapper/cryptroot /mnt/home
@@ -252,35 +334,8 @@ grep -q "geo.mirror.pkgbuild.com" /etc/pacman.d/mirrorlist || \
     echo "Server = https://geo.mirror.pkgbuild.com/\$repo/os/\$arch" >> /etc/pacman.d/mirrorlist
 pacman -Sy
 
-# Core packages — profile-independent
-BASE_PKGS=(
-    # Base system
-    base linux linux-firmware base-devel git rust sudo
-    efibootmgr dosfstools btrfs-progs
-    # Network
-    iwd bluez bluez-utils reflector
-    # Wayland / Hyprland
-    hyprland xdg-desktop-portal-hyprland hyprpaper waybar swaync
-    # Audio (PipeWire)
-    pipewire pipewire-pulse wireplumber
-    # Display manager & Qt theming
-    sddm qt5-wayland qt6-wayland qt5ct qt6ct kvantum dconf
-    # GUI apps & tools
-    alacritty kitty neovim nemo brightnessctl stow
-    papirus-icon-theme cantarell-fonts ttf-jetbrains-mono-nerd ttf-font-awesome
-    fuzzel cliphist polkit-gnome
-    lazygit fastfetch fzf zoxide
-    grim slurp swappy
-    # System utilities
-    zram-generator man-db acpid fwupd
-    snapper snap-pac
-)
-
-# Add GRUB if selected as bootloader
-[[ "$BOOTLOADER" == "grub" ]] && BASE_PKGS+=(grub)
-
-# Assemble final list: base + microcode + GPU + profile extras
-ALL_PKGS=("${BASE_PKGS[@]}" "$MICROCODE" "${GPU_PKGS[@]}" "${EXTRA_PKGS[@]}")
+# Core packages, GRUB and the final package list were assembled above,
+# next to the summary, so --dry-run can report them.
 
 log "Installing ${#ALL_PKGS[@]} packages via pacstrap..."
 pacstrap /mnt "${ALL_PKGS[@]}"
@@ -292,10 +347,6 @@ log "Generating fstab..."
 genfstab -U /mnt >> /mnt/etc/fstab
 
 ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
-
-# Build systemd service list dynamically from profile
-ALL_SERVICES="iwd systemd-resolved bluetooth acpid sddm fstrim.timer snapper-timeline.timer snapper-cleanup.timer"
-[[ -n "$SVC_EXTRA" ]] && ALL_SERVICES="$ALL_SERVICES $SVC_EXTRA"
 
 log "Entering chroot — configuring ${PROFILE_NAME}..."
 
@@ -422,5 +473,10 @@ echo "  Next steps:"
 echo "  1. reboot — remove the USB drive when the screen goes dark"
 echo "  2. Unlock LUKS, then connect to Wi-Fi:"
 echo "     iwctl station wlan0 connect <YOUR_SSID>"
-echo "  3. git clone <your-dotfiles-repo> && ./post-install.sh"
+echo "  3. git clone <your-dotfiles-repo> && ./post-install.sh --dry-run"
+echo "     (review the plan, then re-run without --dry-run)"
+echo
+echo "  Hyprland loads ~/.config/hypr/hyprland.lua (needs Hyprland 0.55+),"
+echo "  which require()s the modules sitting beside it. The previous"
+echo "  hyprland.conf is kept as hyprland.conf.bak and is never loaded."
 hr

@@ -52,10 +52,12 @@ button:hover {
 /* Grouped all active modules for cleaner code */
 #clock,
 #battery,
-#custom-bluetooth,
+#bluetooth,
 #backlight,
 #network,
 #pulseaudio,
+#power,
+#custom-power,
 #tray {
     padding: 0.35rem 0.55rem;
     color: #e6e6e6;
@@ -87,7 +89,7 @@ button:hover {
 
 /* Grouped hover states */
 #battery:hover,
-#custom-bluetooth:hover,
+#bluetooth:hover,
 #clock:hover,
 #backlight:hover,
 #network:hover,
