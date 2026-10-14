@@ -1,0 +1,10 @@
+# ── graphify knowledge graph output ─────────────────────────────
+# Regenerated on demand with /graphify or `graphify update .`.
+graphify-out/
+
+# ── stow backups ────────────────────────────────────────────────
+# post-install.sh parks conflicting files here instead of deleting them.
+.stow-backups/
+
+# ── local-only files ────────────────────────────────────────────
+run-claude.sh
