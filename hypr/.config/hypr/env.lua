@@ -2,16 +2,13 @@
 --  Environment Variables (Catppuccin & Wayland)
 -- =====================================================
 
--- TODO(unicode-safe-translation): the old config line was
+-- GTK_THEME is intentionally not set here. The old hyprlang line was
 --   env = env = GTK_THEME,catppuccin-mocha-blue-standard+default
--- The doubled "env =" is a long-standing typo and it is unclear what
--- hyprlang actually did with it (most likely it set a variable literally
--- named "env = GTK_THEME", which setenv() rejects). Left disabled rather
--- than guessed at, because either reading is a behaviour change.
--- If the intent was to set the GTK theme, replace this comment with:
+-- The doubled "env =" meant it never took effect, so a literal port to
 --   hl.env("GTK_THEME", "catppuccin-mocha-blue-standard+default")
---
--- The GTK theme is set via gsettings at startup instead — see autostart.lua.
+-- would turn a no-op into a real change — and to "blue", which then fights
+-- the gsettings theme set in autostart.lua ("mauve"). Dropped cleanly so the
+-- live appearance is unchanged; GTK theming is owned by gsettings there.
 
 hl.env("XCURSOR_THEME", "Papirus-Dark")
 hl.env("XCURSOR_SIZE", "24")
