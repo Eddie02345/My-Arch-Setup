@@ -6,7 +6,6 @@ iwmenu-bin
 jpdfbookmarks
 packettracer
 paru
-paru-debug
 r-quick-share-bin
 topgrade
 ttf-ms-fonts
